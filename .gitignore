@@ -1,2 +1,23 @@
 CMakeLists.txt.user
 
+
+CMakeCache.txt
+
+cmake_install.cmake
+CMakeFiles
+*.project
+*.workspace
+*.a
+install/
+colorer/Makefile
+bootstrap
+
+far2l/Makefile
+
+farftp/Makefile
+
+farlng/Makefile
+
+Makefile
+
+tools/farlng

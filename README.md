@@ -51,12 +51,15 @@ ninja -j4
 
 #### Macos build
 
- * Run brew install glib gawk
+ * Run brew install glib gawk cmake pkg-config wxWidgets
 
  * Build latest wxWidgets (brew version is not good one).
 Sample configuration: ./configure --disable-shared --disable-debug CC=clang CXX=clang++ CXXFLAGS="-stdlib=libc++ -std=c++11" OBJCXXFLAGS="-stdlib=libc++ -std=c++11" LDFLAGS=-stdlib=libc++ --enable-monolithic --enable-unicode
 
  * Run cmake -G "CodeLite - Unix Makefiles"
+
+ * cmake --build .
+ * run ```install/far2l```
 
  * Open FAR.workspace and build project
 
