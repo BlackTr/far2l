@@ -81,17 +81,19 @@ extern "C" int WinPortMain(int argc, char **argv, int(*AppMain)(int argc, char *
 ///////////////
 
 
-static void SaveSize(unsigned int width, unsigned int height)
+static void SaveSize(unsigned int width, unsigned int height, unsigned int x, unsigned int y)
 {
 	std::ofstream os;
 	os.open(InMyProfile("consolesize").c_str());
 	if (os.is_open()) {
 		os << width << std::endl;
 		os << height << std::endl;
-	}
+                os << x << std::endl;
+                os << y << std::endl;
+        }
 }
 
-static void LoadSize(unsigned int &width, unsigned int &height)
+static void LoadSize(unsigned int &width, unsigned int &height, unsigned int &x, unsigned int &y)
 {
 	std::ifstream is;
 	is.open(InMyProfile("consolesize").c_str());
@@ -105,7 +107,15 @@ static void LoadSize(unsigned int &width, unsigned int &height)
 		if (!str.empty()) {
 			height = atoi(str.c_str());
 		}
-	}
+                getline (is, str);
+                if (!str.empty()) {
+                        x = atoi(str.c_str());
+                }
+                getline (is, str);
+                if (!str.empty()) {
+                        y = atoi(str.c_str());
+                }
+        }
 }
 
 struct EventWithRect : wxCommandEvent
@@ -378,7 +388,9 @@ wxIMPLEMENT_APP_NO_MAIN(WinPortApp);
 
 bool WinPortApp::OnInit()
 {
-	WinPortFrame *frame = new WinPortFrame("WinPortApp", wxDefaultPosition, wxDefaultSize );
+    unsigned int cw, ch, x, y;
+    LoadSize(cw, ch, x, y);
+    WinPortFrame *frame = new WinPortFrame("WinPortApp", wxPoint(x, y), wxDefaultSize );
 //    WinPortFrame *frame = new WinPortFrame( "WinPortApp", wxPoint(50, 50), wxSize(800, 600) );
 	frame->Show( true );
 	if (g_broadway)
@@ -412,12 +424,12 @@ WinPortPanel::~WinPortPanel()
 
 void WinPortPanel::OnInitialized( wxCommandEvent& event )
 {
-	int w, h;
+        int w, h;
 	GetClientSize(&w, &h);
 	fprintf(stderr, "OnInitialized: client size = %u x %u\n", w, h);
-	unsigned int cw, ch;
+        unsigned int cw, ch, x, y;
 	g_wx_con_out.GetSize(cw, ch);
-	LoadSize(cw, ch);
+        LoadSize(cw, ch, x, y);
 	wxDisplay disp(GetDisplayIndex());
 	wxRect rc = disp.GetClientArea();
 	if ((unsigned)rc.GetWidth() >= cw * _paint_context.FontWidth() 
@@ -471,7 +483,8 @@ void WinPortPanel::CheckForResizePending()
 #endif
 				g_wx_con_out.SetSize(width, height);
 				if (!_frame->IsFullScreen() && !_frame->IsMaximized() && _frame->IsShown()) {
-					SaveSize(width, height);
+                                        wxPoint pt = _frame->GetPosition();
+                                        SaveSize(width, height, pt.x, pt.y);
 				}
 				INPUT_RECORD ir = {0};
 				ir.EventType = WINDOW_BUFFER_SIZE_EVENT;

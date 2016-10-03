@@ -1,13 +1,16 @@
 CMakeLists.txt.user
 
-
+.codelite
 CMakeCache.txt
-
+tools
 cmake_install.cmake
 CMakeFiles
+CMakeScripts
 *.project
 *.workspace
 *.a
+*.xcodeproj
+*.build/
 install/
 colorer/Makefile
 bootstrap
@@ -21,3 +24,5 @@ farlng/Makefile
 Makefile
 
 tools/farlng
+
+far2l/far2l.mk
