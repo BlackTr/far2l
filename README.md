@@ -57,9 +57,9 @@ ninja -j4
    Sample configuration:
    ```./configure --disable-shared --disable-debug CC=clang CXX=clang++ CXXFLAGS="-stdlib=libc++ -std=c++11" OBJCXXFLAGS="-stdlib=libc++ -std=c++11" LDFLAGS=-stdlib=libc++ --enable-monolithic --enable-unicode```
 
- * Run ```cmake -G "CodeLite - Unix Makefiles"``` OR Run ```cmake -G "Xcode"```
+ * Run ```cmake -G "CodeLite - Unix Makefiles" ../far2l``` OR Run ```cmake -G "Xcode"```
 
- * Run ```cmake --build .``` **OR** Open FAR.workspace with **CodeLite** **OR** Open CMakeLists.txt with **QtCreator** and build project
+ * Run ```cmake --build ../far2l``` **OR** Open FAR.workspace with **CodeLite** **OR** Open CMakeLists.txt with **QtCreator** and build project
  * Run ```install/far2l```
 
 #### IDE Setup
