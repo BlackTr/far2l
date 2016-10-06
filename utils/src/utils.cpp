@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <assert.h>
 #include "ConvertUTF.h"
+#include <errno.h>
 
 //TODO: Implement convertion according to locale set, but not only UTF8
 //NB: Routines here should not change or preserve result of WINPORT(GetLastError)
@@ -238,7 +239,7 @@ void CheckedCloseFDPair(int *fd)
 
 //////////////
 
-ErrnoSaver::ErrnoSaver() : v(errno) 
+ErrnoSaver::ErrnoSaver() : v(errno)
 {
 }
 
