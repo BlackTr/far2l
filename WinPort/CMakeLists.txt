@@ -35,6 +35,10 @@ src/PathHelpers.cpp
 src/UI/Paint.cpp
 src/UI/Main.cpp
 src/UI/wxWinTranslations.cpp
+src/sudo/sudo_common.cpp
+src/sudo/sudo_client.cpp
+src/sudo/sudo_client_api.cpp
+src/sudo/sudo_dispatcher.cpp
 )
 
 add_library (WinPort ${SOURCES})
