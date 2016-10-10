@@ -11,6 +11,7 @@
 #include <vector>
 #include <mutex>
 #include "sudo_private.h"
+#include <locale.h>
 
 namespace Sudo 
 {
