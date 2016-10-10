@@ -181,6 +181,9 @@ void FileList::ShowFileList(int Fast)
 				case OWNER_COLUMN:
 					IDMessage=MColumnOwner;
 					break;
+				case GROUP_COLUMN:
+					IDMessage=MColumnGroup;
+					break;
 				case NUMLINK_COLUMN:
 					IDMessage=MColumnMumLinks;
 					break;
@@ -860,6 +863,7 @@ extern void GetColor(int PaletteIndex);
 void FileList::ShowList(int ShowStatus,int StartColumn)
 {
 	FARString strDateStr, strTimeStr;
+
 	int StatusShown=FALSE;
 	int MaxLeftPos=0,MinLeftPos=FALSE;
 	int ColumnCount=ShowStatus ? ViewSettings.StatusColumnCount:ViewSettings.ColumnCount;
@@ -1228,6 +1232,33 @@ void FileList::ShowList(int ShowStatus,int StartColumn)
 							FS<<fmt::LeftAlign()<<fmt::Width(ColumnWidth)<<fmt::Precision(ColumnWidth)<<Owner+CurLeftPos;
 							break;
 						}
+
+						case GROUP_COLUMN:
+						{
+							const wchar_t* Group=ListData[ListPos]->strGroup;
+
+							int CurLeftPos=0;
+
+							if (!ShowStatus && LeftPos>0)
+							{
+								int Length=StrLength(Group);
+
+								if (Length>ColumnWidth)
+								{
+									CurLeftPos=LeftPos;
+
+									if (CurLeftPos>Length-ColumnWidth)
+										CurLeftPos=Length-ColumnWidth;
+
+									if (CurLeftPos>MaxLeftPos)
+										MaxLeftPos=CurLeftPos;
+								}
+							}
+
+							FS<<fmt::LeftAlign()<<fmt::Width(ColumnWidth)<<fmt::Precision(ColumnWidth)<<Group+CurLeftPos;
+							break;
+						}
+
 
 						case NUMLINK_COLUMN:
 						{

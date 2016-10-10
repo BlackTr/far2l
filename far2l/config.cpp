@@ -59,6 +59,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "panelmix.hpp"
 #include "strmix.hpp"
 #include "udlist.hpp"
+#include "datetime.hpp"
 #include "FarDlgBuilder.hpp"
 
 Options Opt={0};
@@ -112,22 +113,51 @@ const wchar_t NKeyVMenu[]=L"VMenu";
 
 const wchar_t *constBatchExt=L".BAT;.CMD;";
 
+static void ApplySudoConfiguration()
+{
+ 	std::string sudo_app = g_strFarPath.GetMB(); 
+	std::string askpass_app = g_strFarPath.GetMB(); 
+	
+	sudo_app+= "/far2l_sudoapp";
+	askpass_app+= "/far2l_askpass";
+
+	SudoClientMode mode;
+	if (Opt.SudoEnabled) {
+		mode = Opt.SudoConfirmModify ? SCM_CONFIRM_MODIFY : SCM_CONFIRM_NONE;
+	} else
+		mode = SCM_DISABLE;
+	sudo_client_configure(mode, Opt.SudoPasswordExpiration, sudo_app.c_str(), askpass_app.c_str(),
+		Wide2MB(MSG(MSudoTitle)).c_str(), Wide2MB(MSG(MSudoPrompt)).c_str(), Wide2MB(MSG(MSudoConfirm)).c_str());
+}
+
 void SystemSettings()
 {
 	DialogBuilder Builder(MConfigSystemTitle, L"SystemSettings");
 
-	Builder.AddCheckbox(MConfigRO, &Opt.ClearReadOnly);
+	DialogItemEx *SudoEnabledItem = Builder.AddCheckbox(MConfigSudoEnabled, &Opt.SudoEnabled);
+	DialogItemEx *SudoPasswordExpirationEdit = Builder.AddIntEditField(&Opt.SudoPasswordExpiration, 4);
+	DialogItemEx *SudoPasswordExpirationText = Builder.AddTextBefore(SudoPasswordExpirationEdit, MConfigSudoPasswordExpiration);
+	
+	SudoPasswordExpirationText->Indent(4);
+	SudoPasswordExpirationEdit->Indent(4);
+
+	DialogItemEx *SudoConfirmModifyItem = Builder.AddCheckbox(MConfigSudoConfirmModify, &Opt.SudoConfirmModify);
+	SudoConfirmModifyItem->Indent(4);
+
+	Builder.LinkFlags(SudoEnabledItem, SudoConfirmModifyItem, DIF_DISABLE);
+	Builder.LinkFlags(SudoEnabledItem, SudoPasswordExpirationEdit, DIF_DISABLE);
+
 
 	DialogItemEx *DeleteToRecycleBin = Builder.AddCheckbox(MConfigRecycleBin, &Opt.DeleteToRecycleBin);
 	DialogItemEx *DeleteLinks = Builder.AddCheckbox(MConfigRecycleBinLink, &Opt.DeleteToRecycleBinKillLink);
 	DeleteLinks->Indent(4);
 	Builder.LinkFlags(DeleteToRecycleBin, DeleteLinks, DIF_DISABLE);
 
-	Builder.AddCheckbox(MSudoParanoic, &Opt.SudoParanoic);
+
+//	Builder.AddCheckbox(MSudoParanoic, &Opt.SudoParanoic);
 //	Builder.AddCheckbox(CopyWriteThrough, &Opt.CMOpt.WriteThrough);
 	Builder.AddCheckbox(MConfigCopySharing, &Opt.CMOpt.CopyOpened);
 	Builder.AddCheckbox(MConfigScanJunction, &Opt.ScanJunction);
-	Builder.AddCheckbox(MConfigCreateUppercaseFolders, &Opt.CreateUppercaseFolders);
 
 	DialogItemEx *InactivityExit = Builder.AddCheckbox(MConfigInactivity, &Opt.InactivityExit);
 	DialogItemEx *InactivityExitTime = Builder.AddIntEditField(&Opt.InactivityExitTime, 2);
@@ -141,11 +171,12 @@ void SystemSettings()
 	Builder.AddCheckbox(MConfigRegisteredTypes, &Opt.UseRegisteredTypes);
 	Builder.AddCheckbox(MConfigCloseCDGate, &Opt.CloseCDGate);
 	Builder.AddCheckbox(MConfigUpdateEnvironment, &Opt.UpdateEnvironment);
-	Builder.AddText(MConfigElevation);
+
 	Builder.AddCheckbox(MConfigAutoSave, &Opt.AutoSaveSetup);
 	Builder.AddOKCancel();
 
 	Builder.ShowDialog();
+	ApplySudoConfiguration();
 }
 
 
@@ -624,11 +655,13 @@ static struct FARConfig
 	{1, REG_DWORD,  NKeySystem,L"SaveViewHistory",&Opt.SaveViewHistory,1, 0},
 	{1, REG_DWORD,  NKeySystem,L"UseRegisteredTypes",&Opt.UseRegisteredTypes,1, 0},
 	{1, REG_DWORD,  NKeySystem,L"AutoSaveSetup",&Opt.AutoSaveSetup,0, 0},
-	{1, REG_DWORD,  NKeySystem,L"ClearReadOnly",&Opt.ClearReadOnly,0, 0},
 	{1, REG_DWORD,  NKeySystem,L"DeleteToRecycleBin",&Opt.DeleteToRecycleBin,0, 0},
 	{1, REG_DWORD,  NKeySystem,L"DeleteToRecycleBinKillLink",&Opt.DeleteToRecycleBinKillLink,1, 0},
 	{0, REG_DWORD,  NKeySystem,L"WipeSymbol",&Opt.WipeSymbol,0, 0},
-	{1, REG_DWORD,  NKeySystem,L"SudoParanoic",&Opt.SudoParanoic,0, 0},
+	{1, REG_DWORD,  NKeySystem,L"SudoEnabled",&Opt.SudoEnabled,1, 0},
+	{1, REG_DWORD,  NKeySystem,L"SudoConfirmModify",&Opt.SudoConfirmModify,1, 0},
+	{1, REG_DWORD,  NKeySystem,L"SudoPasswordExpiration",&Opt.SudoPasswordExpiration,15*60, 0},
+
 
 	{1, REG_DWORD,  NKeySystem,L"WriteThrough",&Opt.CMOpt.WriteThrough, 0, 0},
 	{0, REG_DWORD,  NKeySystem,L"CopySecurityOptions",&Opt.CMOpt.CopySecurityOptions,0, 0},
@@ -636,7 +669,6 @@ static struct FARConfig
 	{1, REG_DWORD,  NKeySystem, L"MultiCopy",&Opt.CMOpt.MultiCopy,0, 0},
 	{1, REG_DWORD,  NKeySystem,L"CopyTimeRule",  &Opt.CMOpt.CopyTimeRule, 3, 0},
 
-	{1, REG_DWORD,  NKeySystem,L"CreateUppercaseFolders",&Opt.CreateUppercaseFolders,0, 0},
 	{1, REG_DWORD,  NKeySystem,L"InactivityExit",&Opt.InactivityExit,0, 0},
 	{1, REG_DWORD,  NKeySystem,L"InactivityExitTime",&Opt.InactivityExitTime,15, 0},
 	{1, REG_DWORD,  NKeySystem,L"DriveMenuMode",&Opt.ChangeDriveMode,DRIVE_SHOW_TYPE|DRIVE_SHOW_PLUGINS|DRIVE_SHOW_SIZE_FLOAT|DRIVE_SHOW_CDROM, 0},
@@ -971,6 +1003,8 @@ void ReadConfig()
                                   Opt.FindOpt.OutColumnTypes,Opt.FindOpt.OutColumnWidths,Opt.FindOpt.OutColumnWidthType,
                                   Opt.FindOpt.OutColumnCount);
 	}
+
+	ApplySudoConfiguration();
 	/* *************************************************** </ПОСТПРОЦЕССЫ> */
 }
 
@@ -1052,4 +1086,33 @@ void SaveConfig(int Ask)
 		CtrlObject->Macro.SaveMacros();
 
 	/* *************************************************** </ПОСТПРОЦЕССЫ> */
+}
+
+void LanguageSettings()
+{
+	VMenu *LangMenu, *HelpMenu;
+
+	if (Select(FALSE, &LangMenu))
+	{
+		Lang.Close();
+
+		if (!Lang.Init(g_strFarPath, true, MNewFileName))
+		{
+			Message(MSG_WARNING, 1, L"Error", L"Cannot load language data", L"Ok");
+			exit(0);
+		}
+
+		Select(TRUE,&HelpMenu);
+		delete HelpMenu;
+		LangMenu->Hide();
+		CtrlObject->Plugins.ReloadLanguage();
+		WINPORT(SetEnvironmentVariable)(L"FARLANG",Opt.strLanguage);
+		PrepareStrFTime();
+		PrepareUnitStr();
+		FrameManager->InitKeyBar();
+		CtrlObject->Cp()->RedrawKeyBar();
+		CtrlObject->Cp()->SetScreenPosition();
+		ApplySudoConfiguration();
+	}
+	delete LangMenu; //???? BUGBUG
 }

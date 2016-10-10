@@ -10,7 +10,7 @@
 #include <set>
 #include <vector>
 #include <mutex>
-#include "sudo_common.h"
+#include "sudo_private.h"
 
 namespace Sudo 
 {
@@ -42,6 +42,31 @@ namespace Sudo
 	static Opened<int> g_fds;
 	static Opened<DIR *> g_dirs;
 
+	static void OnSudoDispatch_Execute(BaseTransaction &bt)
+	{
+		std::string cmd;
+		bt.RecvStr(cmd);
+		int no_wait = bt.RecvInt();
+		int r;
+		if (no_wait) {
+			r = fork();
+			if (r == 0) {
+				r = system(cmd.c_str());
+				_exit(r);
+				exit(r);
+			}
+			if (r != -1) {
+				PutZombieUnderControl(r);
+				r = 0;
+			}
+		} else {
+			r = system(cmd.c_str());
+		}
+		bt.SendInt(r);
+		if (r==-1)
+			bt.SendErrno();
+	}
+	
 	static void OnSudoDispatch_Close(BaseTransaction &bt)
 	{
 		int fd;
@@ -320,11 +345,15 @@ namespace Sudo
 	
 	void OnSudoDispatch(SudoCommand cmd, BaseTransaction &bt)
 	{
-		fprintf(stderr, "OnSudoDispatch: %u\n", cmd);
+		//fprintf(stderr, "OnSudoDispatch: %u\n", cmd);
 		switch (cmd) {
 			case SUDO_CMD_PING:
 				break;
-		
+				
+			case SUDO_CMD_EXECUTE:
+				OnSudoDispatch_Execute(bt);
+				break;
+				
 			case SUDO_CMD_CLOSE:
 				OnSudoDispatch_Close(bt);
 				break;
@@ -430,21 +459,43 @@ namespace Sudo
 		}
 	}
 	
-	extern "C" __attribute__ ((visibility("default"))) void sudo_dispatcher(int pipe_request, int pipe_reply)
+	static void sudo_dispatcher_with_pipes(int pipe_request, int pipe_reply)
 	{
 		fprintf(stderr, "sudo_dispatcher(%d, %d)\n", pipe_request, pipe_reply);
 		
+		SudoCommand cmd = SUDO_CMD_INVALID;
 		try {
 			for (;;) {
 				BaseTransaction bt(pipe_reply, pipe_request);
-				SudoCommand cmd;
 				bt.RecvPOD(cmd);
 				OnSudoDispatch(cmd, bt);
 				bt.SendPOD(cmd);
 			}
 		} catch (const char *what) {
-			fprintf(stderr, "sudo_dispatcher - %s (errno=%u)\n", what, errno);
+			fprintf(stderr, "sudo_dispatcher - %s (cmd=%u errno=%u)\n", what, cmd, errno);
 		}
-	}	
+	}
+	
+	
+	extern "C" __attribute__ ((visibility("default"))) int sudo_main_dispatcher()
+	{
+		int pipe_reply = dup(STDOUT_FILENO);
+		int pipe_request = dup(STDIN_FILENO);
+		int fd = open("/dev/null", O_RDWR);
+		if (fd!=-1) {
+			dup2(fd, STDOUT_FILENO);
+			dup2(fd, STDIN_FILENO);
+			close(fd);
+		} else
+			perror("open /dev/null");
+
+		setlocale(LC_ALL, "");//otherwise non-latin keys missing with XIM input method
+		sudo_dispatcher_with_pipes(pipe_request, pipe_reply);
+		close(pipe_request);
+		close(pipe_reply);
+		return 0;	
+	}
+
 }
+
 

@@ -6,8 +6,23 @@
 extern "C" {
 #endif
 
- __attribute__ ((visibility("default"))) void sudo_client(int (*p_sudo_launcher)(int pipe_request, int pipe_reply));
- __attribute__ ((visibility("default"))) void sudo_dispatcher(int pipe_request, int pipe_reply);
+
+
+ typedef enum SudoClientMode_ {
+	 SCM_DISABLE,
+	 SCM_CONFIRM_MODIFY,
+	 SCM_CONFIRM_NONE
+ } SudoClientMode;
+
+ void sudo_client_configure(SudoClientMode mode, int password_expiration, 
+	const char *sudo_app, const char *askpass_app,
+	const char *sudo_title, const char *sudo_prompt, const char *sudo_confirm);
+	
+ int sudo_main_askpass();
+ int sudo_main_dispatcher();
+
+ int sudo_client_execute(const char *cmd, bool modify, bool no_wait);
+ __attribute__ ((visibility("default"))) int sudo_client_is_required_for(const char *pathname, bool modify);
 
  __attribute__ ((visibility("default"))) void sudo_client_region_enter();
  __attribute__ ((visibility("default"))) void sudo_client_region_leave();
@@ -38,6 +53,7 @@ extern "C" {
  __attribute__ ((visibility("default"))) int sdc_link(const char *path1, const char *path2);
  __attribute__ ((visibility("default"))) char *sdc_realpath(const char *path, char *resolved_path);
  __attribute__ ((visibility("default"))) char *sdc_getcwd(char *buf, size_t size);
+ 
 #ifdef __cplusplus
 }
 

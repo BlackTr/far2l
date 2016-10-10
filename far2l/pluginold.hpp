@@ -847,11 +847,9 @@ namespace oldfar
 
 	enum FarSystemSettings
 	{
-		FSS_CLEARROATTRIBUTE               = 0x00000001,
 		FSS_DELETETORECYCLEBIN             = 0x00000002,
 		FSS_WRITETHROUGH                   = 0x00000004,
 		FSS_COPYFILESOPENEDFORWRITING      = 0x00000008,
-		FSS_CREATEFOLDERSINUPPERCASE       = 0x00000010,
 		FSS_SAVECOMMANDSHISTORY            = 0x00000020,
 		FSS_SAVEFOLDERSHISTORY             = 0x00000040,
 		FSS_SAVEVIEWANDEDITHISTORY         = 0x00000080,
@@ -1544,10 +1542,12 @@ namespace oldfar
 	enum EXECUTEFLAGS
 	{
 		EF_HIDEOUT = 0x01,
-		EF_NOWAIT = 0x02
+		EF_NOWAIT = 0x02,
+		EF_SUDO = 0x04
 	};
 
-        typedef int (WINAPI *FAREXECUTE)(const char *CmdStr, unsigned int ExecFlags, int (WINAPI *ForkProc)(int argc, char *argv[]) );
+        typedef int (WINAPI *FAREXECUTE)(const char *CmdStr, unsigned int ExecFlags);
+	typedef int (WINAPI *FAREXECUTE_LIBRARY)(const char *Library, const char *Symbol, const char *CmdStr, unsigned int ExecFlags);
 
 	typedef struct FarStandardFunctions
 	{
@@ -1597,7 +1597,8 @@ namespace oldfar
 		FARSTDMKLINK               MkLink;
 		FARCONVERTNAMETOREAL       ConvertNameToReal;
 		FARGETREPARSEPOINTINFO     GetReparsePointInfo;
-		FAREXECUTE               Execute;
+		FAREXECUTE                 Execute;
+		FAREXECUTE_LIBRARY         ExecuteLibrary;
 	} FARSTANDARDFUNCTIONS;
 
 	struct PluginStartupInfo

@@ -5,9 +5,15 @@
 
 namespace Sudo
 {
+	#define SDC_ENV_TITLE	"sdc_sudo_title"
+	#define SDC_ENV_CONFIRM	"sdc_sudo_confirm"
+	#define SDC_ENV_PROMPT	"sdc_sudo_prompt"
+
 	enum SudoCommand
 	{
+		SUDO_CMD_INVALID = 0,
 		SUDO_CMD_PING = 1,
+		SUDO_CMD_EXECUTE,
 		SUDO_CMD_OPEN,
 		SUDO_CMD_CLOSE,
 		SUDO_CMD_LSEEK,
@@ -69,10 +75,13 @@ namespace Sudo
 		void NewTransaction(SudoCommand cmd);
 	};
 
-	bool TouchClientConnection();
-	bool HasClientConnection();
-	void ClientSetLastCurDir(const char *path);
-	bool ClientGetLastCurDir(char *path, size_t size);
+	bool TouchClientConnection(bool want_modify);
+	bool IsSudoRegionActive();
+	
+	void ClientCurDirOverrideReset();
+	void ClientCurDirOverrideSet(const char *path);
+	bool ClientCurDirOverrideSetIfRecent(const char *path);
+	bool ClientCurDirOverrideQuery(char *path, size_t size);
 	
 	class ClientReconstructCurDir
 	{

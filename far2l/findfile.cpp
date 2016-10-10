@@ -2151,6 +2151,7 @@ void AddMenuRecord(HANDLE hDlg,const wchar_t *FullName, const FAR_FIND_DATA_EX& 
 		{
 			case DIZ_COLUMN:
 			case OWNER_COLUMN:
+			case GROUP_COLUMN:
 			{
 				// пропускаем, не реализовано
 				break;
@@ -2700,6 +2701,7 @@ struct THREADPARAM
 
 DWORD ThreadRoutine(LPVOID Param)
 {
+	SudoClientRegion scr;
 	InitInFileSearch();
 	THREADPARAM* tParam=reinterpret_cast<THREADPARAM*>(Param);
 	tParam->PluginMode?DoPreparePluginList(tParam->hDlg, false):DoPrepareFileList(tParam->hDlg);

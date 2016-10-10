@@ -1071,11 +1071,9 @@ enum FarPoliciesFlags
 
 enum FarSystemSettings
 {
-	FSS_CLEARROATTRIBUTE               = 0x00000001,
 	FSS_DELETETORECYCLEBIN             = 0x00000002,
 	FSS_WRITETHROUGH                   = 0x00000004,
 	FSS_COPYFILESOPENEDFORWRITING      = 0x00000008,
-	FSS_CREATEFOLDERSINUPPERCASE       = 0x00000010,
 	FSS_SAVECOMMANDSHISTORY            = 0x00000020,
 	FSS_SAVEFOLDERSHISTORY             = 0x00000040,
 	FSS_SAVEVIEWANDEDITHISTORY         = 0x00000080,
@@ -1929,10 +1927,12 @@ typedef DWORD (WINAPI *FARGETCURRENTDIRECTORY)(DWORD Size,wchar_t* Buffer);
 enum EXECUTEFLAGS
 {
 	EF_HIDEOUT = 0x01,
-	EF_NOWAIT = 0x02
+	EF_NOWAIT = 0x02,
+	EF_SUDO = 0x04
 };
 
-typedef int (WINAPI *FAREXECUTE)(const wchar_t *CmdStr, unsigned int ExecFlags, int (WINAPI *ForkProc)(int argc, wchar_t *argv[]) );
+typedef int (WINAPI *FAREXECUTE)(const wchar_t *CmdStr, unsigned int ExecFlags);
+typedef int (WINAPI *FAREXECUTE_LIBRARY)(const wchar_t *Library, const wchar_t *Symbol, const wchar_t *CmdStr, unsigned int ExecFlags);
 
 typedef struct FarStandardFunctions
 {
@@ -1994,6 +1994,7 @@ typedef struct FarStandardFunctions
 	FARGETREPARSEPOINTINFO     GetReparsePointInfo;
 	FARGETCURRENTDIRECTORY     GetCurrentDirectory;
 	FAREXECUTE                 Execute;
+	FAREXECUTE_LIBRARY         ExecuteLibrary;
 } FARSTANDARDFUNCTIONS;
 
 struct PluginStartupInfo

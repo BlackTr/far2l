@@ -63,7 +63,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <locale.h>
 #include <fcntl.h>
-#include "../WinPort/sudo.h"
+#include <dlfcn.h>
 
 #ifdef DIRECT_RT
 int DirectRT=0;
@@ -563,50 +563,6 @@ int FarAppMain(int argc, char **argv)
 }
 
 
-static bool DetectAskPass(const char *possible)
-{
-	struct stat s = {0};
-	if (stat(possible, &s)==0 && (s.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH))!=0) {
-		setenv("SUDO_ASKPASS", possible, 1);
-		fprintf(stderr, "DetectAskPass: found %s\n", possible);
-		return true;
-	}
-	return false;
-}
-
-static int SudoLauncher(int pipe_request, int pipe_reply)
-{
-	char *askpass = getenv("SUDO_ASKPASS");
-	struct stat s = {0};
-	if (!askpass || !*askpass || stat(askpass, &s)==-1) {
-		fprintf(stderr, "SudoLauncher: SUDO_ASKPASS env not set or invalid\n");
-		if (!DetectAskPass("/usr/lib/openssh/gnome-ssh-askpass")
-			&& !DetectAskPass("/usr/bin/ssh-askpass")
-			&& !DetectAskPass("/usr/lib/ssh/x11-ssh-askpass")) {
-			return -1;
-		}
-	}
-	std::string command = Opt.SudoParanoic ? "sudo -Ak \"" : "sudo -A \"";
-	command+= Wide2MB(g_strFarModuleName.CPtr());
-	command+= "\" --sudo";
-
-	fprintf(stderr, "SudoLauncher: %s\n", command.c_str());
-	
-	int r = fork();
-	if (r==0) {	
-		//sudo closes all descriptors except std, so use them
-		dup2(pipe_reply, STDOUT_FILENO);
-		close(pipe_reply);
-		dup2(pipe_request, STDIN_FILENO); 
-		close(pipe_request);
-		
-		r = execl("/bin/sh", "sh", "-c", command.c_str(), NULL);
-		perror("execl");
-		_exit(r);
-		exit(r);
-	}
-	return r;
-}
 /*void EncodingTest()
 {
 	std::wstring v = MB2Wide("\x80hello\x80""aaaaaaaaaaaa\x80""zzzzzzzzzzz\x80");
@@ -634,27 +590,41 @@ void SudoTest()
 }
 */
 
+static int libexec(const char *lib, const char *symbol, int argc, char *argv[])
+{
+	void *dl = dlopen(lib, RTLD_LOCAL|RTLD_LAZY);
+	if (!dl) {
+		fprintf(stderr, "libexec('%s', '%s', %u) - dlopen error %u\n", lib, symbol, argc, errno);
+		return -1;
+	}
 
+	typedef int (*libexec_main_t)(int argc, char *argv[]);
+	libexec_main_t libexec_main = (libexec_main_t)dlsym(dl, symbol);
+	if (!libexec_main) {
+		fprintf(stderr, "libexec('%s', '%s', %u) - dlsym error %u\n", lib, symbol, argc, errno);
+		return -1;
+	}
+
+	return libexec_main(argc, argv);
+}
 
 int _cdecl main(int argc, char *argv[])
 {
-	setlocale(LC_ALL, "");//otherwise non-latin keys missing with XIM input method
-	if (argc > 1 && strcmp(argv[1], "--sudo")==0 ) {
-		int pipe_reply = dup(STDOUT_FILENO);
-		int pipe_request = dup(STDIN_FILENO);
-		int fd = open("/dev/null", O_RDWR);
-		dup2(fd, STDOUT_FILENO);
-		dup2(fd, STDIN_FILENO);
-		close(fd);
-
-		sudo_dispatcher(pipe_request, pipe_reply);
-		return 0;
+	char *name = strrchr(argv[0], GOOD_SLASH);
+	if (name) ++name; else name = argv[0];
+	if (argc > 0) {
+		if (strcmp(name, "far2l_askpass")==0)
+			return sudo_main_askpass();
+		if (strcmp(name, "far2l_sudoapp")==0)
+			return sudo_main_dispatcher();
+		if (argc >= 4) {
+			if (strcmp(argv[1], "--libexec")==0)
+				return libexec(argv[2], argv[3], argc - 4, argv + 4);
+		}
 	}
 
+	setlocale(LC_ALL, "");//otherwise non-latin keys missing with XIM input method
 	SetupFarPath(argc, argv);
-	sudo_client(SudoLauncher);
-	
-	//SudoTest();
 
 	apiEnableLowFragmentationHeap();
 	return WinPortMain(argc, argv, FarAppMain);
