@@ -1320,13 +1320,13 @@ upd:"Operation requires priviledges elevation"
 upd:"Operation requires priviledges elevation"
 
 MSudoPrompt
-"Введите пароль для sudo:"
-"Enter sudo password:"
-upd:"Enter sudo password:"
-upd:"Enter sudo password:"
-upd:"Enter sudo password:"
-upd:"Enter sudo password:"
-upd:"Enter sudo password:"
+"Введите пароль для sudo"
+"Enter sudo password"
+upd:"Enter sudo password"
+upd:"Enter sudo password"
+upd:"Enter sudo password"
+upd:"Enter sudo password"
+upd:"Enter sudo password"
 
 MSudoConfirm
 "Подтвердите использование привилегий"
@@ -1364,14 +1364,23 @@ upd:"Disable &write cache"
 upd:"Disable &write cache"
 upd:"Disable &write cache"
 
-MConfigCopySharing
-"Копировать открытые для &записи файлы"
-"Copy files opened for &writing"
-"Kopírovat soubory otevřené pro &zápis"
-"Zum Schreiben geöffnete Dateien &kopieren"
-"Írásra megnyitott &fájlok másolhatók"
-"Kopiuj pliki otwarte do zap&isu"
-"Copiar archivos abiertos para &escritura"
+MCopyXAttr
+"Копировать расширенные а&ттрибуты"
+"Copy extended a&ttributes"
+upd:"Copy extended a&ttributes"
+upd:"Copy extended a&ttributes"
+upd:"Copy extended a&ttributes"
+upd:"Copy extended a&ttributes"
+upd:"Copy extended a&ttributes"
+
+MConfigOnlyFilesSize
+"Учитывать только размер файлов"
+"Use only files size in estimation"
+upd:"Use only files size in estimation"
+upd:"Use only files size in estimation"
+upd:"Use only files size in estimation"
+upd:"Use only files size in estimation"
+upd:"Use only files size in estimation"
 
 MConfigScanJunction
 "Ск&анировать символические ссылки"
@@ -1690,6 +1699,87 @@ MConfigSaverMinutes
 "m&inut"
 "minutos"
 
+MConfigConsoleChangeFont
+"Выбрать шри&фт"
+"Change &font"
+upd:"Change &font"
+upd:"Change &font"
+upd:"Change &font"
+upd:"Change &font"
+upd:"Change &font"
+
+MConfigConsolePaintSharp
+"Отключить сглаживание"
+"Disable antialiasing"
+upd:"Disable antialiasing"
+upd:"Disable antialiasing"
+upd:"Disable antialiasing"
+upd:"Disable antialiasing"
+upd:"Disable antialiasing"
+
+MConfigExclusiveKeys
+"Экслюзивная обработка нажатий, включающих:"
+"Exclusively handle hotkeys that include:"
+upd:"Exclusively handle hotkeys that include:"
+upd:"Exclusively handle hotkeys that include:"
+upd:"Exclusively handle hotkeys that include:"
+upd:"Exclusively handle hotkeys that include:"
+upd:"Exclusively handle hotkeys that include:"
+
+MConfigExclusiveCtrlLeft
+"Левый Ctrl"
+"Left Ctrl"
+upd:"Left Ctrl"
+upd:"Left Ctrl"
+upd:"Left Ctrl"
+upd:"Left Ctrl"
+upd:"Left Ctrl"
+
+MConfigExclusiveCtrlRight
+"Правый Ctrl"
+"Right Ctrl"
+upd:"Right Ctrl"
+upd:"Right Ctrl"
+upd:"Right Ctrl"
+upd:"Right Ctrl"
+upd:"Right Ctrl"
+
+MConfigExclusiveAltLeft
+"Левый Alt "
+"Left Alt "
+upd:"Left Alt "
+upd:"Left Alt "
+upd:"Left Alt "
+upd:"Left Alt "
+upd:"Left Alt "
+
+MConfigExclusiveAltRight
+"Правый Alt "
+"Right Alt "
+upd:"Right Alt "
+upd:"Right Alt "
+upd:"Right Alt "
+upd:"Right Alt "
+upd:"Right Alt "
+
+MConfigExclusiveWinLeft
+"Левый Win "
+"Left Win "
+upd:"Left Win "
+upd:"Left Win "
+upd:"Left Win "
+upd:"Left Win "
+upd:"Left Win "
+
+MConfigExclusiveWinRight
+"Правый Win "
+"Right Win "
+upd:"Right Win "
+upd:"Right Win "
+upd:"Right Win "
+upd:"Right Win "
+upd:"Right Win "
+
 MConfigCopyTotal
 "Показывать &общий индикатор копирования"
 "Show &total copy progress indicator"
@@ -1725,15 +1815,6 @@ MConfigPgUpChangeDisk
 "A Ctrl-Pg&Up meghajtót vált"
 "Użyj Ctrl-Pg&Up do zmiany napędu"
 "Usar Ctrl-Pg&Up para cambiar unidad"
-
-MConfigClearType
-upd:"ClearType friendly redraw (can be slow)"
-"ClearType friendly redraw (can be slow)"
-upd:"ClearType friendly redraw (can be slow)"
-upd:"ClearType friendly redraw (can be slow)"
-upd:"ClearType friendly redraw (can be slow)"
-upd:"ClearType friendly redraw (can be slow)"
-"Limpiar rediseño (puede ser lento)"
 
 MConfigTitleAddons
 upd:"Far window title addons:"
@@ -1936,6 +2017,17 @@ upd:"AutoComplete settings"
 upd:"AutoComplete settings"
 upd:"AutoComplete settings"
 "Opciones de autocompletar"
+
+MConfigAutoCompleteExceptions
+l:
+"Шаблоны &исключений"
+"&Exceptions wildcards:"
+upd:"&Exceptions wildcards:"
+upd:"&Exceptions wildcards:"
+upd:"&Exceptions wildcards:"
+upd:"&Exceptions wildcards:"
+upd:"&Exceptions wildcards:"
+
 
 MConfigAutoCompleteShowList
 l:
@@ -2249,7 +2341,7 @@ MViewConfigPersistentSelection
 "Selección &persistente"
 
 MViewConfigUTF8CodePageAsDefault
-"&Использовать кодовую страницу UTF-&8 по умолчанию"
+"&Использовать кодовую страницу UTF-8 по умолчанию"
 "Use UTF-&8 code page by default"
 upd:"Automaticky otevírat soubory ve UTF-&8 kódování"
 upd:"Dateien standardmäßig mit UTF-&8-Kod&ierung öffnen"
@@ -2459,7 +2551,7 @@ upd:"Pick &up the word"
 "Pick &up the word"
 
 MEditConfigUTF8CodePageAsDefault
-"&Использовать кодовую страницу UTF-&8 по умолчанию"
+"&Использовать кодовую страницу UTF-8 по умолчанию"
 "Use UTF-&8 code page by default"
 upd:"Automaticky otevírat soubory ve UTF-&8 kódování"
 upd:"Dateien standardmäßig mit UTF-&8-Kod&ierung öffnen"
@@ -2475,6 +2567,70 @@ upd:"Neue Dateien mit UTF-8-Ko&dierung erstellen"
 "Új &fájl létrehozása UTF-8 kódlappal"
 "&Twórz nowe pliki w kodowaniu UTF-8"
 "Usar código UTF-8 al c&rear archivos nuevos"
+
+MNotifConfigTitle
+l:
+"Уведомления"
+"Notifications"
+"Notifications"
+"Notifications"
+"Notifications"
+"Notifications"
+"Notifications"
+
+MNotifConfigOnFileOperation
+"Уведомлять о завершении &файловой операции"
+"Notify on &file operation completion"
+upd:"Notify on &file operation completion"
+upd:"Notify on &file operation completion"
+upd:"Notify on &file operation completion"
+upd:"Notify on &file operation completion"
+upd:"Notify on &file operation completion"
+
+MNotifConfigOnConsole
+"Уведомлять о завершении &консольной команды"
+"Notify on &console command completion"
+upd:"Notify on &console command completion"
+upd:"Notify on &console command completion"
+upd:"Notify on &console command completion"
+upd:"Notify on &console command completion"
+upd:"Notify on &console command completion"
+
+MNotifConfigOnlyIfBackground
+"Уведомлять только когда в &фоне"
+"Notify only if in &background"
+upd:"Notify only if in &background"
+upd:"Notify only if in &background"
+upd:"Notify only if in &background"
+upd:"Notify only if in &background"
+upd:"Notify only if in &background"
+
+MConsoleCommandComplete
+"Консольная команда выполнена"
+"Console command complete"
+upd:"Console command complete"
+upd:"Console command complete"
+upd:"Console command complete"
+upd:"Console command complete"
+upd:"Console command complete"
+
+MConsoleCommandFailed
+"Консольная команда завершена с ошибкой"
+"Console command failed"
+upd:"Console command failed"
+upd:"Console command failed"
+upd:"Console command failed"
+upd:"Console command failed"
+upd:"Console command failed"
+
+MFileOperationComplete
+"Файловая операция выполнена"
+"File operation complete"
+upd:"File operation complete"
+upd:"File operation complete"
+upd:"File operation complete"
+upd:"File operation complete"
+upd:"File operation complete"
 
 MSaveSetupTitle
 l:
@@ -2541,41 +2697,14 @@ MLinkDlgTitle
 "Dowiąż"
 "Enlace"
 
-MCopySecurity
-"П&рава доступа:"
-"&Access rights:"
-"&Přístupová práva:"
-"Zugriffsrecht&e:"
-"Hozzáférési &jogok:"
-"&Prawa dostępu:"
-"&Permisos de acceso:"
-
-MCopySecurityCopy
-"Копироват&ь"
-"Co&py"
-"&Kopírovat"
-"Ko&pieren"
-"Más&ol"
-"Kopiu&j"
-"Co&piar"
-
-MCopySecurityInherit
-"Нас&ледовать"
-"&Inherit"
-"&Zdědit"
-"Ve&rerben"
-"Ö&rököl"
-"&Dziedzicz"
-"&Heredar"
-
-MCopySecurityLeave
-"По умол&чанию"
-"Defau&lt"
-"Vých&ozí"
-"A&utomat."
-"Ala&pért."
-"Do&myślne"
-"Por defecto"
+MCopyAccessMode
+"Копировать &режим доступа к файлам"
+"Copy files &access mode"
+upd:"Copy files &access mode"
+upd:"Copy files &access mode"
+upd:"Copy files &access mode"
+upd:"Copy files &access mode"
+upd:"Copy files &access mode"
 
 MCopyIfFileExist
 "Уже су&ществующие файлы:"
@@ -2668,13 +2797,22 @@ MLinkTypeSymlinkDirectory
 "enlace simbólico (&directorios)"
 
 MCopySymLinkContents
-"Копировать содерж&имое символических ссылок"
-"Cop&y contents of symbolic links"
-"Kopírovat obsah sym&bolických linků"
-"Inhalte von s&ymbolischen Links kopieren"
-"Sz&imbolikus linkek másolása"
-"&Kopiuj zawartość linków symbolicznych"
-"Copiar contenidos de enlaces simbólicos"
+"Копировать содерж&имое всех символических ссылок"
+"Cop&y contents of all symbolic links"
+upd:"Kopírovat obsah sym&bolických linků"
+upd:"Inhalte von s&ymbolischen Links kopieren"
+upd:"Sz&imbolikus linkek másolása"
+upd:"&Kopiuj zawartość linków symbolicznych"
+upd:"Copiar contenidos de enlaces simbólicos"
+
+MCopySymLinkContentsOuter
+"Копировать содержимое &внешних символических ссылок"
+"Copy contents of oute&r symbolic links"
+upd:"Copy contents of oute&r symbolic links"
+upd:"Copy contents of oute&r symbolic links"
+upd:"Copy contents of oute&r symbolic links"
+upd:"Copy contents of oute&r symbolic links"
+upd:"Copy contents of oute&r symbolic links"
 
 MCopyMultiActions
 "Обр&абатывать несколько имён файлов"
@@ -3070,6 +3208,15 @@ MCopyCannotCreateJunctionToFile
 "A csomópont nem hozható létre. A fájl már létezik:"
 "Nie można utworzyć połączenia - plik już istnieje:"
 "No se puede unir. El archivo ya existe:"
+
+MCopyCannotCreateSymlinkAskCopyContents
+"Невозможно создать связь. Копировать данные вместо связей?"
+"Cannot create symlink. Copy contents instead?"
+upd:"Cannot create symlink. Copy contents instead?"
+upd:"Cannot create symlink. Copy contents instead?"
+upd:"Cannot create symlink. Copy contents instead?"
+upd:"Cannot create symlink. Copy contents instead?"
+upd:"Cannot create symlink. Copy contents instead?"
 
 MCopyCannotCreateVolMount
 l:
@@ -9809,23 +9956,23 @@ MInfoMemoryFree
 "Wolna pamięć"
 "Memoria libre"
 
-MInfoVirtualTotal
-"Всего вирт. памяти"
-"Total virtual"
-"Celkem virtuální"
-"Virtueller Speicher gesamt"
-"Összes virtuális"
-"Całkowita wirtualna"
-"Total virtual"
+MInfoSharedMemory
+"Разделяемая память"
+"Shared memory"
+upd:"Shared RAM"
+upd:"Shared RAM"
+upd:"Shared RAM"
+upd:"Shared RAM"
+upd:"Shared RAM"
 
-MInfoVirtualFree
-"Свободно вирт. памяти"
-"Free virtual"
-"Volná virtuální"
-"Virtueller Speicher frei"
-"Szabad virtuális"
-"Wolna wirtualna"
-"Virtual libre"
+MInfoBufferMemory
+"Буферизованная память"
+"Buffer memory"
+upd:"Buffer RAM"
+upd:"Buffer RAM"
+upd:"Buffer RAM"
+upd:"Buffer RAM"
+upd:"Buffer RAM"
 
 MInfoPageFileTotal
 "Всего файла подкачки"
@@ -10924,9 +11071,18 @@ MMenuEditor
 "Ustawienia &edytora"
 "&Editor "
 
+MMenuNotifications
+"Настройки &уведомлений"
+"No&tifications settings"
+upd:"No&tifications settings"
+upd:"No&tifications settings"
+upd:"No&tifications settings"
+upd:"No&tifications settings"
+upd:"No&tifications settings"
+
 MMenuCodePages
 "Кодов&ые страницы"
-upd:"Cod&e pages"
+upd:"&Code pages"
 upd:"Znakové sady:"
 upd:"Tabellen"
 upd:"Kódlapok"
@@ -19231,13 +19387,13 @@ MKBTreeCtrlAltShiftF12
 
 MCopyTimeInfo
 l:
-"Время: %8.8s    Осталось: %8.8s    %8.8sб/с"
-"Time: %8.8s    Remaining: %8.8s    %8.8sb/s"
-"Čas: %8.8s      Zbývá: %8.8s      %8.8sb/s"
-"Zeit: %8.8s   Verbleibend: %8.8s   %8.8sb/s"
-"Eltelt: %8.8s    Maradt: %8.8s    %8.8sb/s"
-"Czas: %8.8s    Pozostało: %8.8s    %8.8sb/s"
-"Tiempo: %8.8s    Restante: %8.8s    %8.8sb/s"
+"Время: %8.8ls    Осталось: %8.8ls    %8.8lsб/с"
+"Time: %8.8ls    Remaining: %8.8ls    %8.8lsb/s"
+"Čas: %8.8ls      Zbývá: %8.8ls      %8.8lsb/s"
+"Zeit: %8.8ls   Verbleibend: %8.8ls   %8.8lsb/s"
+"Eltelt: %8.8ls    Maradt: %8.8ls    %8.8lsb/s"
+"Czas: %8.8ls    Pozostało: %8.8ls    %8.8lsb/s"
+"Tiempo: %8.8ls    Restante: %8.8ls    %8.8lsb/s"
 
 MKeyESCWasPressed
 l:
@@ -19643,6 +19799,24 @@ MFileFilterAttrVirtual
 "&Wirtualny"
 "&Virtual"
 
+MFileFilterAttrExecutable
+"Исполняемый"
+"E&xecutable"
+upd:"E&xecutable"
+upd:"E&xecutable"
+upd:"E&xecutable"
+upd:"E&xecutable"
+upd:"E&xecutable"
+
+MFileFilterAttrBroken
+"Неисправный"
+"&Broken"
+upd:"&Broken"
+upd:"&Broken"
+upd:"&Broken"
+upd:"&Broken"
+upd:"&Broken"
+
 MFileFilterReset
 "Очистит&ь"
 "Reset"
@@ -19681,13 +19855,13 @@ MBadFileSizeFormat
 
 MFarTitleAddonsAdmin
 l:
-"Администратор"
-"Administrator"
-upd:"Administrator"
-upd:"Administrator"
-upd:"Administrator"
-upd:"Administrator"
-"Administrador"
+"root"
+"root"
+upd:"root"
+upd:"root"
+upd:"root"
+upd:"root"
+"root"
 
 MAdminRequired
 "Нужно обладать правами администратора"
@@ -19841,6 +20015,60 @@ upd:"Do not ask again in the current session"
 upd:"Do not ask again in the current session"
 upd:"Do not ask again in the current session"
 "No preguntar nuevamente en la sesión actual"
+
+MTerminalClipboardAccessTitle
+"Доступ к буферу обмена"
+"Clipboard access"
+upd:"Clipboard access"
+upd:"Clipboard access"
+upd:"Clipboard access"
+upd:"Clipboard access"
+upd:"Clipboard access"
+
+MTerminalClipboardAccessText
+"Укажите как это приложение может пользоваться буфером обмена."
+"Please choose how this terminal application may use clipboard."
+upd:"Please choose how this terminal application may use clipboard."
+upd:"Please choose how this terminal application may use clipboard."
+upd:"Please choose how this terminal application may use clipboard."
+upd:"Please choose how this terminal application may use clipboard."
+upd:"Please choose how this terminal application may use clipboard."
+
+MTerminalClipboardAccessBlock
+"&Заблокировать"
+"&Block attempt"
+upd:"&Block attempt"
+upd:"&Block attempt"
+upd:"&Block attempt"
+upd:"&Block attempt"
+upd:"&Block attempt"
+
+MTerminalClipboardAccessTemporaryRemote
+"&Удаленный буфер"
+"&Remote clipboard"
+upd:"&Remote clipboard"
+upd:"&Remote clipboard"
+upd:"&Remote clipboard"
+upd:"&Remote clipboard"
+upd:"&Remote clipboard"
+
+MTerminalClipboardAccessTemporaryLocal
+"&Общий буфер"
+"&Share clipboard"
+upd:"&Share clipboard"
+upd:"&Share clipboard"
+upd:"&Share clipboard"
+upd:"&Share clipboard"
+upd:"&Share clipboard"
+
+MTerminalClipboardAccessAlwaysLocal
+"Общий буфер всег&да"
+"Share clipboard &always"
+upd:"Share clipboard &always"
+upd:"Share clipboard &always"
+upd:"Share clipboard &always"
+upd:"Share clipboard &always"
+upd:"Share clipboard &always"
 
 #Must be the last
 MNewFileName

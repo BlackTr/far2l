@@ -11,24 +11,38 @@
 static std::mutex g_key_file_helper_mutex;
 
 KeyFileHelper::KeyFileHelper(const char *filename, bool load)
-	: _kf(g_key_file_new()),  _filename(filename), _dirty(!load)
+	: _kf(g_key_file_new()),  _filename(filename), _dirty(!load), _loaded(false)
 {
 	GError *err = NULL;
-	g_key_file_helper_mutex.lock();
-	g_key_file_load_from_file(_kf, _filename.c_str(), G_KEY_FILE_NONE, &err);
-	g_key_file_helper_mutex.unlock();
-	fprintf(stderr, "KeyFileHelper(%s, %d) err=%p\n", _filename.c_str(), load, err);
+	if (load) {
+		g_key_file_helper_mutex.lock();
+		if (!g_key_file_load_from_file(_kf, _filename.c_str(), G_KEY_FILE_NONE, &err)) {
+			//fprintf(stderr, "KeyFileHelper(%s, %d) err=%p\n", _filename.c_str(), load, err);
+		} else {
+			_loaded = true;
+		}
+		g_key_file_helper_mutex.unlock();
+	}
 }
 
 KeyFileHelper::~KeyFileHelper()
 {
 	if (_dirty) {
-		GError *err = NULL;
-		g_key_file_helper_mutex.lock();
-		g_key_file_save_to_file(_kf, _filename.c_str(), &err);
-		g_key_file_helper_mutex.unlock();
-		fprintf(stderr, "~KeyFileHelper(%s) err=%p\n", _filename.c_str(),  err);
+		Save();
 	}
+	g_key_file_free(_kf);
+}
+
+bool KeyFileHelper::Save()
+{
+	GError *err = NULL;
+	g_key_file_helper_mutex.lock();
+	bool out = !!g_key_file_save_to_file(_kf, _filename.c_str(), &err);
+	g_key_file_helper_mutex.unlock();
+	if (out) {
+		_dirty = false;
+	}
+	return out;
 }
 
 std::vector<std::string> KeyFileHelper::EnumSections()
@@ -45,10 +59,36 @@ std::vector<std::string> KeyFileHelper::EnumSections()
 	return out;
 }
 
+void KeyFileHelper::RemoveSection(const char *section)
+{
+	_dirty = true;
+	g_key_file_remove_group(_kf, section, NULL);
+}
+
+void KeyFileHelper::RemoveKey(const char *section, const char *name)
+{
+	_dirty = true;
+	g_key_file_remove_key(_kf, section, name, NULL);
+}
+
+std::vector<std::string> KeyFileHelper::EnumKeys(const char *section)
+{
+	std::vector<std::string> out;
+	
+	gchar **r = g_key_file_get_keys(_kf, section, NULL, NULL);
+	if (r) {
+		for (gchar **p = r; *p; ++p) 
+			out.push_back(*p);
+		g_strfreev(r);
+	}
+	
+	return out;
+}
+
 std::string KeyFileHelper::GetString(const char *section, const char *name, const char *def)
 {
 	std::string rv;
-	char *v = g_key_file_get_string(_kf, "FarFTP", "Version", NULL);
+	char *v = g_key_file_get_string(_kf, section, name, NULL);
 	if (v) {
 		rv.assign(v);
 		free(v);

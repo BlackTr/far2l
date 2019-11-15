@@ -1,6 +1,7 @@
 #include "MultiArc.hpp"
 #include "marclng.hpp"
 #include <string>
+#include <unistd.h>
 
 #if defined(__GNUC__)
 #ifdef __cplusplus
@@ -22,8 +23,8 @@ BOOL WINAPI DllMainCRTStartup(HANDLE hDll,DWORD dwReason,LPVOID lpReserved)
 
 SHAREDSYMBOL int WINAPI _export GetMinFarVersion(void)
 {
-	#define MAKEFARVERSION(major,minor,build) ( ((major)<<8) | (minor) | ((build)<<16))
-  return MAKEFARVERSION(2, 0, 0);
+	#define MAKEFARVERSION(major,minor) ( ((major)<<16) | (minor))
+  return MAKEFARVERSION(2, 1);
 }
 
 SHAREDSYMBOL void WINAPI _export SetStartupInfo(const struct PluginStartupInfo *Info)
@@ -70,7 +71,7 @@ SHAREDSYMBOL void WINAPI _export SetStartupInfo(const struct PluginStartupInfo *
 }
 
 
-SHAREDSYMBOL HANDLE WINAPI _export OpenFilePlugin(const char *Name,const unsigned char *Data,int DataSize)
+SHAREDSYMBOL HANDLE WINAPI _export OpenFilePlugin(const char *Name,const unsigned char *Data,int DataSize,int OpMode)
 {
   if (ArcPlugin==NULL)
     return INVALID_HANDLE_VALUE;
@@ -98,27 +99,22 @@ SHAREDSYMBOL HANDLE WINAPI _export OpenFilePlugin(const char *Name,const unsigne
   return hPlugin;
 }
 
-#ifdef __APPLE__
-char *get_current_dir_name();
-#endif
-
 std::string MakeFullName(const char *name)
 {
-	if (name[0]=='.'=='/')
+	if (name[0]=='/')
 		return name;
 	
 	std::string out;
-	char *cd = get_current_dir_name();
-	if (cd) {
-		if (name[0]=='.' && name[1]=='/') {
-			name+=2 ;
+	char cd[PATH_MAX];
+	if (getcwd(cd, sizeof(cd))) {
+		if (name[0] == '.' && name[1] == '/') {
+			name += 2;
 		}
 		out = cd;
-		free(cd);
-		out+= '/';
+		out += '/';
 	}
 	
-	out+= name;
+	out += name;
 	return out;
 }
 
@@ -156,7 +152,7 @@ SHAREDSYMBOL HANDLE WINAPI _export OpenPlugin(int OpenFrom, INT_PTR Item)
         free(data);
         return INVALID_HANDLE_VALUE;
       }
-      h = OpenFilePlugin(filename.c_str(), data, datasize);
+      h = OpenFilePlugin(filename.c_str(), data, datasize, OPM_COMMANDS);
       free(data);
       if ((h==(HANDLE)-2) || h==INVALID_HANDLE_VALUE)
         return INVALID_HANDLE_VALUE;

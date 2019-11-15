@@ -37,15 +37,21 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "bitflags.hpp"
 #include "array.hpp"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <map>
+#include <set>
+
 
 enum
 {
 	// эту фигню может ставить плагин (младшие 8 бит)
-	FSCANTREE_RETUPDIR         = 0x00000001, // = FRS_RETUPDIR
+	FSCANTREE_RETUPDIR         = FRS_RETUPDIR,
 	// FSCANTREE_RETUPDIR causes GetNextName() to return every directory twice:
 	// 1. when scanning its parent directory 2. after directory scan is finished
-	FSCANTREE_RECUR            = 0x00000002, // = FRS_RECUR
-	FSCANTREE_SCANSYMLINK      = 0x00000004, // = FRS_SCANSYMLINK
+	FSCANTREE_RECUR            = FRS_RECUR,
+	FSCANTREE_SCANSYMLINK      = FRS_SCANSYMLINK,
 
 	// в младшем слове старшие 8 бита служебные!
 	FSCANTREE_SECONDPASS       = 0x00002000, // то, что раньше было было SecondPass[]
@@ -54,6 +60,10 @@ enum
 
 	// здесь те флаги, которые могут выставляться в 3-м параметре SetFindPath()
 	FSCANTREE_FILESFIRST       = 0x00010000, // Сканирование каталга за два прохода. Сначала файлы, затем каталоги
+	FSCANTREE_NOFILES          = 0x00020000, // Don't return files
+	FSCANTREE_NODEVICES        = 0x00040000, // Don't return devices
+	FSCANTREE_NOLINKS          = 0x00080000, // Don't return symlinks
+	FSCANTREE_CASE_INSENSITIVE = 0x00100000 // Currently affects only english characters
 };
 
 struct ScanTreeData
@@ -71,12 +81,21 @@ struct ScanTreeData
 	}
 };
 
+class ScannedINodes
+{
+	struct Map : std::map<uint64_t, std::set<uint64_t> > {} _map;
+public:
+	bool Put(uint64_t d, uint64_t ino)
+	{
+		return _map[d].insert(ino).second;
+	}
+};
+
 class ScanTree
 {
 	private:
 		BitFlags Flags;
 		TPointerArray<ScanTreeData> ScanItems;
-
 		FARString strFindPath;
 		FARString strFindMask;
 
@@ -91,4 +110,6 @@ class ScanTree
 		void SkipDir();
 		int IsDirSearchDone() {return Flags.Check(FSCANTREE_SECONDDIRNAME);};
 		int InsideJunction()   {return Flags.Check(FSCANTREE_INSIDEJUNCTION);};
+		
+		bool IsSymlinksScanEnabled() {return Flags.Check(FSCANTREE_SCANSYMLINK); }
 };

@@ -155,7 +155,7 @@ enum enumOptionsMenu
 	MENU_OPTIONS_VMENUSETTINGS,
 	MENU_OPTIONS_CMDLINESETTINGS,
 	MENU_OPTIONS_AUTOCOMPLETESETTINGS,
-	MENU_OPTIONS_INFOPANELSETTINGS,
+//	MENU_OPTIONS_INFOPANELSETTINGS,
 	MENU_OPTIONS_SEPARATOR1,
 	MENU_OPTIONS_CONFIRMATIONS,
 	MENU_OPTIONS_FILEPANELMODES,
@@ -168,6 +168,7 @@ enum enumOptionsMenu
 	MENU_OPTIONS_SEPARATOR3,
 	MENU_OPTIONS_COLORS,
 	MENU_OPTIONS_FILESHIGHLIGHTING,
+	MENU_OPTIONS_NOTIFICATIONSSETTINGS,
 	MENU_OPTIONS_SEPARATOR4,
 	MENU_OPTIONS_SAVESETUP
 };
@@ -207,129 +208,130 @@ void ShellOptions(int LastCommand,MOUSE_EVENT_RECORD *MouseEvent)
 {
 	MenuDataEx LeftMenu[]=
 	{
-		MSG(MMenuBriefView),LIF_SELECTED,KEY_CTRL1,
-		MSG(MMenuMediumView),0,KEY_CTRL2,
-		MSG(MMenuFullView),0,KEY_CTRL3,
-		MSG(MMenuWideView),0,KEY_CTRL4,
-		MSG(MMenuDetailedView),0,KEY_CTRL5,
-		MSG(MMenuDizView),0,KEY_CTRL6,
-		MSG(MMenuLongDizView),0,KEY_CTRL7,
-		MSG(MMenuOwnersView),0,KEY_CTRL8,
-		MSG(MMenuLinksView),0,KEY_CTRL9,
-		MSG(MMenuAlternativeView),0,KEY_CTRL0,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuInfoPanel),0,KEY_CTRLL,
-		MSG(MMenuTreePanel),0,KEY_CTRLT,
-		MSG(MMenuQuickView),0,KEY_CTRLQ,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuSortModes),0,KEY_CTRLF12,
-		MSG(MMenuTogglePanel),0,KEY_CTRLF1,
-		MSG(MMenuReread),0,KEY_CTRLR,
-		MSG(MMenuChangeDrive),0,KEY_ALTF1,
+		{MSG(MMenuBriefView),LIF_SELECTED,KEY_CTRL1},
+		{MSG(MMenuMediumView),0,KEY_CTRL2},
+		{MSG(MMenuFullView),0,KEY_CTRL3},
+		{MSG(MMenuWideView),0,KEY_CTRL4},
+		{MSG(MMenuDetailedView),0,KEY_CTRL5},
+		{MSG(MMenuDizView),0,KEY_CTRL6},
+		{MSG(MMenuLongDizView),0,KEY_CTRL7},
+		{MSG(MMenuOwnersView),0,KEY_CTRL8},
+		{MSG(MMenuLinksView),0,KEY_CTRL9},
+		{MSG(MMenuAlternativeView),0,KEY_CTRL0},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuInfoPanel),0,KEY_CTRLL},
+		{MSG(MMenuTreePanel),0,KEY_CTRLT},
+		{MSG(MMenuQuickView),0,KEY_CTRLQ},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuSortModes),0,KEY_CTRLF12},
+		{MSG(MMenuTogglePanel),0,KEY_CTRLF1},
+		{MSG(MMenuReread),0,KEY_CTRLR},
+		{MSG(MMenuChangeDrive),0,KEY_ALTF1}
 	};
 	MenuDataEx FilesMenu[]=
 	{
-		MSG(MMenuView),LIF_SELECTED,KEY_F3,
-		MSG(MMenuEdit),0,KEY_F4,
-		MSG(MMenuCopy),0,KEY_F5,
-		MSG(MMenuMove),0,KEY_F6,
-		MSG(MMenuCreateFolder),0,KEY_F7,
-		MSG(MMenuDelete),0,KEY_F8,
-		MSG(MMenuWipe),0,KEY_ALTDEL,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuAdd),0,KEY_SHIFTF1,
-		MSG(MMenuExtract),0,KEY_SHIFTF2,
-		MSG(MMenuArchiveCommands),0,KEY_SHIFTF3,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuAttributes),0,KEY_CTRLA,
-		MSG(MMenuApplyCommand),0,KEY_CTRLG,
-		MSG(MMenuDescribe),0,KEY_CTRLZ,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuSelectGroup),0,KEY_ADD,
-		MSG(MMenuUnselectGroup),0,KEY_SUBTRACT,
-		MSG(MMenuInvertSelection),0,KEY_MULTIPLY,
-		MSG(MMenuRestoreSelection),0,KEY_CTRLM,
+		{MSG(MMenuView),LIF_SELECTED,KEY_F3},
+		{MSG(MMenuEdit),0,KEY_F4},
+		{MSG(MMenuCopy),0,KEY_F5},
+		{MSG(MMenuMove),0,KEY_F6},
+		{MSG(MMenuCreateFolder),0,KEY_F7},
+		{MSG(MMenuDelete),0,KEY_F8},
+		{MSG(MMenuWipe),0,KEY_ALTDEL},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuAdd),0,KEY_SHIFTF1},
+		{MSG(MMenuExtract),0,KEY_SHIFTF2},
+		{MSG(MMenuArchiveCommands),0,KEY_SHIFTF3},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuAttributes),0,KEY_CTRLA},
+		{MSG(MMenuApplyCommand),0,KEY_CTRLG},
+		{MSG(MMenuDescribe),0,KEY_CTRLZ},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuSelectGroup),0,KEY_ADD},
+		{MSG(MMenuUnselectGroup),0,KEY_SUBTRACT},
+		{MSG(MMenuInvertSelection),0,KEY_MULTIPLY},
+		{MSG(MMenuRestoreSelection),0,KEY_CTRLM}
 	};
 	MenuDataEx CmdMenu[]=
 	{
-		MSG(MMenuFindFile),LIF_SELECTED,KEY_ALTF7,
-		MSG(MMenuHistory),0,KEY_ALTF8,
-		MSG(MMenuVideoMode),0,KEY_ALTF9,
-		MSG(MMenuFindFolder),0,KEY_ALTF10,
-		MSG(MMenuViewHistory),0,KEY_ALTF11,
-		MSG(MMenuFoldersHistory),0,KEY_ALTF12,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuSwapPanels),0,KEY_CTRLU,
-		MSG(MMenuTogglePanels),0,KEY_CTRLO,
-		MSG(MMenuCompareFolders),0,0,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuUserMenu),0,0,
-		MSG(MMenuFileAssociations),0,0,
-		MSG(MMenuFolderShortcuts),0,0,
-		MSG(MMenuFilter),0,KEY_CTRLI,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuPluginCommands),0,KEY_F11,
-		MSG(MMenuWindowsList),0,KEY_F12,
-		MSG(MMenuProcessList),0,KEY_CTRLW,
-		MSG(MMenuHotPlugList),0,0,
+		{MSG(MMenuFindFile),LIF_SELECTED,KEY_ALTF7},
+		{MSG(MMenuHistory),0,KEY_ALTF8},
+		{MSG(MMenuVideoMode),0,KEY_ALTF9},
+		{MSG(MMenuFindFolder),0,KEY_ALTF10},
+		{MSG(MMenuViewHistory),0,KEY_ALTF11},
+		{MSG(MMenuFoldersHistory),0,KEY_ALTF12},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuSwapPanels),0,KEY_CTRLU},
+		{MSG(MMenuTogglePanels),0,KEY_CTRLO},
+		{MSG(MMenuCompareFolders),0,0},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuUserMenu),0,0},
+		{MSG(MMenuFileAssociations),0,0},
+		{MSG(MMenuFolderShortcuts),0,0},
+		{MSG(MMenuFilter),0,KEY_CTRLI},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuPluginCommands),0,KEY_F11},
+		{MSG(MMenuWindowsList),0,KEY_F12},
+		{MSG(MMenuProcessList),0,KEY_CTRLW},
+		{MSG(MMenuHotPlugList),0,0}
 	};
 	MenuDataEx OptionsMenu[]=
 	{
-		MSG(MMenuSystemSettings),LIF_SELECTED,0,
-		MSG(MMenuPanelSettings),0,0,
-		MSG(MMenuInterface),0,0,
-		MSG(MMenuLanguages),0,0,
-		MSG(MMenuPluginsConfig),0,0,
-		MSG(MMenuPluginsManagerSettings),0, 0,
-		MSG(MMenuDialogSettings),0,0,
-		MSG(MMenuVMenuSettings),0,0,
-		MSG(MMenuCmdlineSettings),0,0,
-		MSG(MMenuAutoCompleteSettings),0,0,
-		MSG(MMenuInfoPanelSettings),0,0,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuConfirmation),0,0,
-		MSG(MMenuFilePanelModes),0,0,
-		MSG(MMenuFileDescriptions),0,0,
-		MSG(MMenuFolderInfoFiles),0,0,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuViewer),0,0,
-		MSG(MMenuEditor),0,0,
-		MSG(MMenuCodePages),0,0,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuColors),0,0,
-		MSG(MMenuFilesHighlighting),0,0,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuSaveSetup),0,KEY_SHIFTF9,
+		{MSG(MMenuSystemSettings),LIF_SELECTED,0},
+		{MSG(MMenuPanelSettings),0,0},
+		{MSG(MMenuInterface),0,0},
+		{MSG(MMenuLanguages),0,0},
+		{MSG(MMenuPluginsConfig),0,0},
+		{MSG(MMenuPluginsManagerSettings),0,0},
+		{MSG(MMenuDialogSettings),0,0},
+		{MSG(MMenuVMenuSettings),0,0},
+		{MSG(MMenuCmdlineSettings),0,0},
+		{MSG(MMenuAutoCompleteSettings),0,0},
+//		{MSG(MMenuInfoPanelSettings),0,0},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuConfirmation),0,0},
+		{MSG(MMenuFilePanelModes),0,0},
+		{MSG(MMenuFileDescriptions),0,0},
+		{MSG(MMenuFolderInfoFiles),0,0},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuViewer),0,0},
+		{MSG(MMenuEditor),0,0},
+		{MSG(MMenuCodePages),0,0},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuColors),0,0},
+		{MSG(MMenuFilesHighlighting),0,0},
+		{MSG(MMenuNotifications),0,0},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuSaveSetup),0,KEY_SHIFTF9}
 	};
 	MenuDataEx RightMenu[]=
 	{
-		MSG(MMenuBriefView),LIF_SELECTED,KEY_CTRL1,
-		MSG(MMenuMediumView),0,KEY_CTRL2,
-		MSG(MMenuFullView),0,KEY_CTRL3,
-		MSG(MMenuWideView),0,KEY_CTRL4,
-		MSG(MMenuDetailedView),0,KEY_CTRL5,
-		MSG(MMenuDizView),0,KEY_CTRL6,
-		MSG(MMenuLongDizView),0,KEY_CTRL7,
-		MSG(MMenuOwnersView),0,KEY_CTRL8,
-		MSG(MMenuLinksView),0,KEY_CTRL9,
-		MSG(MMenuAlternativeView),0,KEY_CTRL0,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuInfoPanel),0,KEY_CTRLL,
-		MSG(MMenuTreePanel),0,KEY_CTRLT,
-		MSG(MMenuQuickView),0,KEY_CTRLQ,
-		L"",LIF_SEPARATOR,0,
-		MSG(MMenuSortModes),0,KEY_CTRLF12,
-		MSG(MMenuTogglePanelRight),0,KEY_CTRLF2,
-		MSG(MMenuReread),0,KEY_CTRLR,
-		MSG(MMenuChangeDriveRight),0,KEY_ALTF2,
+		{MSG(MMenuBriefView),LIF_SELECTED,KEY_CTRL1},
+		{MSG(MMenuMediumView),0,KEY_CTRL2},
+		{MSG(MMenuFullView),0,KEY_CTRL3},
+		{MSG(MMenuWideView),0,KEY_CTRL4},
+		{MSG(MMenuDetailedView),0,KEY_CTRL5},
+		{MSG(MMenuDizView),0,KEY_CTRL6},
+		{MSG(MMenuLongDizView),0,KEY_CTRL7},
+		{MSG(MMenuOwnersView),0,KEY_CTRL8},
+		{MSG(MMenuLinksView),0,KEY_CTRL9},
+		{MSG(MMenuAlternativeView),0,KEY_CTRL0},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuInfoPanel),0,KEY_CTRLL},
+		{MSG(MMenuTreePanel),0,KEY_CTRLT},
+		{MSG(MMenuQuickView),0,KEY_CTRLQ},
+		{L"",LIF_SEPARATOR,0},
+		{MSG(MMenuSortModes),0,KEY_CTRLF12},
+		{MSG(MMenuTogglePanelRight),0,KEY_CTRLF2},
+		{MSG(MMenuReread),0,KEY_CTRLR},
+		{MSG(MMenuChangeDriveRight),0,KEY_ALTF2}
 	};
 	HMenuData MainMenu[]=
 	{
-		MSG(MMenuLeftTitle),1,LeftMenu,ARRAYSIZE(LeftMenu),L"LeftRightMenu",
-		MSG(MMenuFilesTitle),0,FilesMenu,ARRAYSIZE(FilesMenu),L"FilesMenu",
-		MSG(MMenuCommandsTitle),0,CmdMenu,ARRAYSIZE(CmdMenu),L"CmdMenu",
-		MSG(MMenuOptionsTitle),0,OptionsMenu,ARRAYSIZE(OptionsMenu),L"OptMenu",
-		MSG(MMenuRightTitle),0,RightMenu,ARRAYSIZE(RightMenu),L"LeftRightMenu"
+		{MSG(MMenuLeftTitle),1,LeftMenu,ARRAYSIZE(LeftMenu),L"LeftRightMenu"},
+		{MSG(MMenuFilesTitle),0,FilesMenu,ARRAYSIZE(FilesMenu),L"FilesMenu"},
+		{MSG(MMenuCommandsTitle),0,CmdMenu,ARRAYSIZE(CmdMenu),L"CmdMenu"},
+		{MSG(MMenuOptionsTitle),0,OptionsMenu,ARRAYSIZE(OptionsMenu),L"OptMenu"},
+		{MSG(MMenuRightTitle),0,RightMenu,ARRAYSIZE(RightMenu),L"LeftRightMenu"}
 	};
 	static int LastHItem=-1,LastVItem=0;
 	int HItem,VItem;
@@ -600,9 +602,9 @@ void ShellOptions(int LastCommand,MOUSE_EVENT_RECORD *MouseEvent)
 				case MENU_OPTIONS_AUTOCOMPLETESETTINGS:
 					AutoCompleteSettings();
 					break;
-				case MENU_OPTIONS_INFOPANELSETTINGS: // InfoPanel Settings
-					InfoPanelSettings();
-					break;
+//				case MENU_OPTIONS_INFOPANELSETTINGS: // InfoPanel Settings
+//					InfoPanelSettings();
+//					break;
 				case MENU_OPTIONS_CONFIRMATIONS:   // Confirmations
 					SetConfirmations();
 					break;
@@ -620,6 +622,9 @@ void ShellOptions(int LastCommand,MOUSE_EVENT_RECORD *MouseEvent)
 					break;
 				case MENU_OPTIONS_EDITORSETTINGS:  // Editor settings
 					EditorConfig(Opt.EdOpt);
+					break;
+				case MENU_OPTIONS_NOTIFICATIONSSETTINGS:  // Notifications settings
+					NotificationsConfig(Opt.NotifOpt);
 					break;
 				case MENU_OPTIONS_CODEPAGESSETTINGS: // Code pages
 					SelectCodePage(CP_AUTODETECT, true, true, true);

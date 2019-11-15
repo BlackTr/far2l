@@ -1,14 +1,12 @@
 #include <mutex>
 
-#include <wx/wx.h>
-#include <wx/display.h>
-
 #include "WinPort.h"
 #include "ConsoleOutput.h"
 #include "ConsoleInput.h"
 #include "WinPortHandle.h"
 #include "PathHelpers.h"
 #include <utils.h>
+#include <pwd.h>
 
 #ifndef _WIN32
 # include <dlfcn.h>
@@ -130,15 +128,53 @@ extern "C" {
 
 	WINPORT_DECL(GetComputerName, BOOL, (LPWSTR lpBuffer, LPDWORD nSize))
 	{
-		fprintf(stderr, "TODO: GetComputerName\n");
-		return 0;
+		char buf[0x100] = {};
+		if (gethostname(&buf[0], ARRAYSIZE(buf) - 1) != 0) {
+			WINPORT(TranslateErrno)();
+			return FALSE;
+		}
+		const std::wstring &str = MB2Wide(buf);
+		if (*nSize <= str.size()) {
+			*nSize = (DWORD)str.size() + 1;
+			WINPORT(SetLastError)(ERROR_BUFFER_OVERFLOW);
+			return FALSE;
+		}
+
+		wcscpy(lpBuffer, str.c_str());
+		*nSize = (DWORD)str.size();
+		return TRUE;
 	}
 
 	WINPORT_DECL(GetUserName, BOOL, (LPWSTR lpBuffer, LPDWORD nSize))
 	{
-		fprintf(stderr, "TODO: GetUserName\n");
-		return 0;
+		struct passwd *pw = getpwuid(getuid());
+		if (!pw || !pw->pw_name) {
+			WINPORT(TranslateErrno)();
+			return FALSE;
+		}
+
+		const std::wstring &str = MB2Wide(pw->pw_name);
+		if (*nSize <= str.size()) {
+			*nSize = (DWORD)str.size() + 1;
+			WINPORT(SetLastError)(ERROR_BUFFER_OVERFLOW);
+			return FALSE;
+		}
+
+		wcscpy(lpBuffer, str.c_str());
+		*nSize = (DWORD)str.size();
+		return TRUE;
 	}
+
+	static char *GetHostNameCached()
+	{
+		static char s_out[0x100] = {0};
+		if (!s_out[0]) {
+			gethostname(&s_out[1], 0xfe);
+			s_out[0] = 1;
+		}
+		return &s_out[1];
+	}
+
 
 	WINPORT_DECL(GetEnvironmentVariable, DWORD, (LPCWSTR lpName, LPWSTR lpBuffer, DWORD nSize))
 	{
@@ -147,8 +183,12 @@ extern "C" {
 #else
 		char *value = getenv(Wide2MB(lpName).c_str());
 		if (!value) {
-			WINPORT(SetLastError)(ERROR_ENVVAR_NOT_FOUND);
-			return 0;
+			if (lpName && wcscmp(lpName, L"HOSTNAME") == 0)
+				value = GetHostNameCached();
+			if (!value) {
+				WINPORT(SetLastError)(ERROR_ENVVAR_NOT_FOUND);
+				return 0;
+			}
 		}
 		std::wstring wide = MB2Wide(value);
 		if (wide.size() >= nSize)
@@ -230,16 +270,18 @@ extern "C" {
 		DWORD gle;
 		switch (errno) {
 			case 0: gle = 0; break;
+			case ENOSPC: gle = ERROR_DISK_FULL; break;
 			case EEXIST: gle = ERROR_ALREADY_EXISTS; break;
 			case ENOENT: gle = ERROR_FILE_NOT_FOUND; break;
 			case EACCES: case EPERM: gle = ERROR_ACCESS_DENIED; break;
 			case ETXTBSY: gle = ERROR_SHARING_VIOLATION; break;
+			case EINVAL: gle = ERROR_INVALID_PARAMETER; break;
 			//case EROFS: gle = ; break;
 			default:
 				gle = 20000 + errno;
-				fprintf(stderr, "TODO: TranslateErrno - %d\n", errno );
+//				fprintf(stderr, "TODO: TranslateErrno - %d\n", errno );
 		}
 		
 		WINPORT(SetLastError)(gle);
-	}	
+	}
 }

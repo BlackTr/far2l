@@ -4,7 +4,7 @@
 //See: 
 // http://www.manmrk.net/tutorials/ISPF/XE/xehelp/html/HID00000579.htm:
     
-const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shift, char keypad)
+const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shift, unsigned char keypad)
 {
 	if (key==VK_CONTROL || key==VK_MENU || key==VK_SHIFT)
 		return ""; //modifiers should not be sent as keys
@@ -13,8 +13,19 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
 		fprintf(stderr, "VT_TranslateSpecialKey: too many modifiers: %u %u %u\n", ctrl, alt, shift);
 		return ""; 
 	}
+
+
 		
 	switch (key) {
+		case VK_RETURN:
+			return "\r";
+
+		case VK_TAB:
+			return "\t";
+
+		case VK_ESCAPE:
+			return "\x1b";
+
 		case VK_F1: /*
         F1                 \x1bOP
         F1                 \x1b[[A
@@ -25,8 +36,8 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
 			if (shift) return "\x1bO2P";
 			if (alt) return "\x1bO3P";
 			if (ctrl) return "\x1bO5P";
-			if (keypad==2) return "\x1b[11~";
-			if (keypad==1) return "\x1b[[A";
+			//if (keypad==2) return "\x1b[11~";
+			//if (keypad==1) return "\x1b[[A";
 			return "\x1bOP";
 
 		case VK_F2: /*
@@ -39,8 +50,8 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
 			if (shift) return "\x1bO2Q";
 			if (alt) return "\x1bO3Q";
 			if (ctrl) return "\x1bO5Q";
-			if (keypad==2) return "\x1b[12~";
-			if (keypad==1) return "\x1b[[B";
+			//if (keypad==2) return "\x1b[12~";
+			//if (keypad==1) return "\x1b[[B";
 			return "\x1bOQ";
 			
 
@@ -54,8 +65,8 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
 			if (shift) return "\x1bO2R";
 			if (alt) return "\x1bO3R";
 			if (ctrl) return "\x1bO5R";
-			if (keypad==2) return "\x1b[13~";
-			if (keypad==1) return "\x1b[[C";
+			//if (keypad==2) return "\x1b[13~";
+			//if (keypad==1) return "\x1b[[C";
 			return "\x1bOR";
 
 
@@ -69,8 +80,8 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
 			if (shift) return "\x1bO2S";
 			if (alt) return "\x1bO3S";
 			if (ctrl) return "\x1bO5S";
-			if (keypad==2) return "\x1b[14~";
-			if (keypad==1) return "\x1b[[D";
+			//if (keypad==2) return "\x1b[14~";
+			//if (keypad==1) return "\x1b[[D";
 			return "\x1bOS";
 
 		case VK_F5: /*
@@ -82,7 +93,7 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
 			if (shift) return "\x1b[15;2~";
 			if (alt) return "\x1b[15;3~";
 			if (ctrl) return "\x1b[15;5~";
-			if (keypad==1 || keypad==2) return "\x1b[[E";
+			//if (keypad==1 || keypad==2) return "\x1b[[E";
 			return "\x1b[15~";
 			
 
@@ -194,7 +205,8 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
 			if (shift) return "\x1b[2H";
 			if (alt) return "\x1b[3H";
 			if (ctrl) return "\x1b[5H";
-			return "\x1b[1~";
+			return "\x1bOH";
+			//return "\x1b[1~";
 		
 		case VK_END: /*
         End                \x1b[4~
@@ -214,7 +226,8 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
 			if (shift) return "\x1b[2F";
 			if (alt) return "\x1b[3F";
 			if (ctrl) return "\x1b[5F";
-			return "\x1b[4~";
+			return "\x1bOF";
+			//return "\x1b[4~";
 		
 		case VK_PRIOR: /*
         PgUp               \x1b[5~
@@ -245,16 +258,16 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
         Up       Alt       \x1b[1;3A
         Up       Ctrl      \x1b[5A
         Up       Ctrl      \x1b[1;5A */
-			if (keypad > 0) {
+			if (keypad == 1) {
 				if (shift) return "\x1b[1;2A";
 				if (alt) return "\x1b[1;3A";
 				if (ctrl) return "\x1b[1;5A";
-				return "\x1b[A";
+				return "\x1bOA";
 			}
 			if (shift) return "\x1b[2A";
 			if (alt) return "\x1b[3A";
 			if (ctrl) return "\x1b[5A";
-			return "\x1bOA";
+			return "\x1b[A";
 		
 		case VK_DOWN: /*
         Down               \x1bOB
@@ -265,16 +278,16 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
         Down     Alt       \x1b[1;3B
         Down     Ctrl      \x1b[5B
         Down     Ctrl      \x1b[1;5B */
-			if (keypad > 0) {
+			if (keypad == 1) {
 				if (shift) return "\x1b[1;2B";
 				if (alt) return "\x1b[1;3B";
 				if (ctrl) return "\x1b[1;5B";
-				return "\x1b[B";
+				return "\x1bOB";
 			}
 			if (shift) return "\x1b[2B";
 			if (alt) return "\x1b[3B";
 			if (ctrl) return "\x1b[5B";
-			return "\x1bOB";
+			return "\x1b[B";
 
 		case VK_LEFT: /*
         Left               \x1bOD
@@ -285,17 +298,17 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
         Left     Alt       \x1b[1;3D
         Left     Ctrl      \x1b[5D
         Left     Ctrl      \x1b[1;5D */
-			if (keypad > 0) {
+			if (keypad == 1) {
 				if (shift) return "\x1b[1;2D";
 				if (alt) return "\x1b[1;3D";
 				if (ctrl) return "\x1b[1;5D";
-				return "\x1b[D";
+				return "\x1bOD";
 			}
 			if (shift) return "\x1b[2D";
 			if (alt) return "\x1b[3D";
 			if (ctrl) return "\x1b[5D";
-			return "\x1bOD";
-		
+			return "\x1b[D";
+
 		case VK_RIGHT: /*
         Right              \x1bOC
         Right              \x1b[C
@@ -305,16 +318,16 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
         Right    Alt       \x1b[1;3C
         Right    Ctrl      \x1b[5C
         Right    Ctrl      \x1b[1;5C */
-			if (keypad > 0) {
+			if (keypad == 1) {
 				if (shift) return "\x1b[1;2C";
 				if (alt) return "\x1b[1;3C";
 				if (ctrl) return "\x1b[1;5C";
-				return "\x1b[C";
+				return "\x1bOC";
 			}
 			if (shift) return "\x1b[2C";
 			if (alt) return "\x1b[3C";
 			if (ctrl) return "\x1b[5C";
-			return "\x1bOC";
+			return "\x1b[C";
 	}
 
 	if (ctrl && !alt && !shift) {		
@@ -345,9 +358,9 @@ const char *VT_TranslateSpecialKey(const WORD key, bool ctrl, bool alt, bool shi
 		case 'X': return "\x18";
 		case 'Y': return "\x19";
 		case 'Z': return "\x1a";
-		case '[': return "\x1b";
-		case '\\': return "\x1c";
-		case ']': return "\x1d";
+		case VK_OEM_4: return "\x1b";//'['
+		case VK_OEM_5: return "\x1c";//'\\'
+		case VK_OEM_6: return "\x1d";//']'
 		}
 	}
 	

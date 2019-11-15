@@ -32,7 +32,8 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "headers.hpp"
-
+#include <sys/ioctl.h>
+#include <signal.h>
 
 #include "lang.hpp"
 #include "keys.hpp"
@@ -42,6 +43,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "panel.hpp"
 #include "fileedit.hpp"
 #include "fileview.hpp"
+#include "exitcode.hpp"
 #include "lockscrn.hpp"
 #include "hilight.hpp"
 #include "manager.hpp"
@@ -59,11 +61,14 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "dirmix.hpp"
 #include "cmdline.hpp"
 #include "console.hpp"
+#include "vtshell.h"
 #include <string>
 #include <sys/stat.h>
 #include <locale.h>
 #include <fcntl.h>
 #include <dlfcn.h>
+#include <unistd.h>
+#include "InterThreadCall.hpp"
 
 #ifdef DIRECT_RT
 int DirectRT=0;
@@ -71,41 +76,36 @@ int DirectRT=0;
 
 static void CopyGlobalSettings();
 
-static void show_help()
+static void print_help(const char *self)
 {
-	WCHAR HelpMsg[]=
-	    L"Usage: far [switches] [apath [ppath]]\n\n"
-	    L"where\n"
-	    L"  apath - path to a folder (or a file or an archive or command with prefix)\n"
-	    L"          for the active panel\n"
-	    L"  ppath - path to a folder (or a file or an archive or command with prefix)\n"
-	    L"          for the passive panel\n\n"
-	    L"The following switches may be used in the command line:\n\n"
-	    L" /?   This help.\n"
-	    L" /a   Disable display of characters with codes 0 - 31 and 255.\n"
-	    L" /ag  Disable display of pseudographics characters.\n"
-	    L" /co  Forces FAR to load plugins from the cache only.\n"
-#ifdef DIRECT_RT
-	    L" /do  Direct output.\n"
-#endif
-	    L" /e[<line>[:<pos>]] <filename>\n"
-	    L"      Edit the specified file.\n"
-	    L" /i   Set icon for FAR console window.\n"
-	    L" /m   Do not load macros.\n"
-	    L" /ma  Do not execute auto run macros.\n"
-	    L" /p[<path>]\n"
-	    L"      Search for \"common\" plugins in the directory, specified by <path>.\n"
-	    L" /u <username>\n"
-	    L"      Allows to have separate settings for different users.\n"
-	    L" /v <filename>\n"
-	    L"      View the specified file. If <filename> is -, data is read from the stdin.\n"
-	    L" /w   Stretch to console window instead of console buffer.\n"
-	    L" /x   Disable exception handling.\n"
-#ifdef _DEBUGEXC
-	    L" /xd  Enable exception handling.\n"
-#endif
-		;
-	Console.Write(HelpMsg, ARRAYSIZE(HelpMsg)-1);
+	printf( "FAR2L - oldschool file manager, with built-in terminal and other usefullness'es\n"
+		"Usage: %s [switches] [-cd apath [-cd ppath]]\n\n"
+		"where\n"
+		"  apath - path to a folder (or a file or an archive or command with prefix)\n"
+		"          for the active panel\n"
+		"  ppath - path to a folder (or a file or an archive or command with prefix)\n"
+		"          for the passive panel\n\n"
+		"The following switches may be used in the command line:\n\n"
+		" -h   This help.\n"
+		" -a   Disable display of characters with codes 0 - 31 and 255.\n"
+		" -ag  Disable display of pseudographics characters.\n"
+		" -co  Forces FAR to load plugins from the cache only.\n"
+		" -cd <path> Change panel's directory to specified path.\n"
+		" -e[<line>[:<pos>]] <filename>\n"
+		"      Edit the specified file.\n"
+		" -m   Do not load macros.\n"
+		" -ma  Do not execute auto run macros.\n"
+		" -p[<path>]\n"
+		"      Search for \"common\" plugins in the directory, specified by <path>.\n"
+		" -u <username>\n"
+		"      Allows to have separate settings for different users.\n"
+		" -v <filename>\n"
+		"      View the specified file. If <filename> is -, data is read from the stdin.\n"
+		" -w   Stretch to console window instead of console buffer.\n"
+		"\n",
+		self);
+	WinPortHelp();
+	//Console.Write(HelpMsg, ARRAYSIZE(HelpMsg)-1);
 }
 
 static int MainProcess(
@@ -174,11 +174,10 @@ static int MainProcess(
 			{
 				Opt.SetupArgv++;
 				strPath = lpwszDestName1;
-				CutToNameUNC(strPath);
-				DeleteEndSlash(strPath); //BUGBUG!! если конечный слешь не убрать - получаем забавный эффект - отсутствует ".."
 
-//				if ((strPath.At(1)==L':' && !strPath.At(2)) || (HasPathPrefix(strPath) && strPath.At(5)==L':' && !strPath.At(6)))
-//					AddEndSlash(strPath);
+				if (strPath != "/") {
+					DeleteEndSlash(strPath); //BUGBUG!! если конечный слешь не убрать - получаем забавный эффект - отсутствует ".."
+				}
 
 				// Та панель, которая имеет фокус - активна (начнем по традиции с Левой Панели ;-)
 				if (Opt.LeftPanel.Focus)
@@ -198,11 +197,10 @@ static int MainProcess(
 				{
 					Opt.SetupArgv++;
 					strPath = lpwszDestName2;
-					CutToNameUNC(strPath);
-					DeleteEndSlash(strPath); //BUGBUG!! если конечный слешь не убрать - получаем забавный эффект - отсутствует ".."
 
-//					if ((strPath.At(1)==L':' && !strPath.At(2)) || (HasPathPrefix(strPath) && strPath.At(5)==L':' && !strPath.At(6)))
-//						AddEndSlash(strPath);
+					if (strPath != "/") {
+						DeleteEndSlash(strPath); //BUGBUG!! если конечный слешь не убрать - получаем забавный эффект - отсутствует ".."
+					}
 
 					// а здесь с точнотью наоборот - обрабатываем пассивную панель
 					if (Opt.LeftPanel.Focus)
@@ -243,7 +241,7 @@ static int MainProcess(
 					}
 					else
 					{
-						strPath = PointToNameUNC(lpwszDestName2);
+						strPath = lpwszDestName2;
 
 						if (!strPath.IsEmpty())
 						{
@@ -262,7 +260,7 @@ static int MainProcess(
 				}
 				else
 				{
-					strPath = PointToNameUNC(lpwszDestName1);
+					strPath = lpwszDestName1;
 
 					if (!strPath.IsEmpty())
 					{
@@ -294,28 +292,47 @@ static int MainProcess(
 int MainProcessSEH(FARString& strEditName,FARString& strViewName,FARString& DestName1,FARString& DestName2,int StartLine,int StartChar)
 {
 	int Result=0;
+	StartDispatchingInterThreadCalls();
 	Result=MainProcess(strEditName,strViewName,DestName1,DestName2,StartLine,StartChar);
+	StopDispatchingInterThreadCalls();
 	return Result;
 }
 
 static void SetupFarPath(int argc, char **argv)
 {
 	InitCurrentDirectory();
-	//todo if (apiGetModuleFileName(nullptr, g_strFarModuleName)) todo
-	{
-		apiGetCurrentDirectory(g_strFarModuleName);
+	char buf[PATH_MAX + 1] = {};
+	ssize_t buf_sz = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+	if (buf_sz <= 0 || buf_sz >= (ssize_t)sizeof(buf) - 1 || buf[0] != GOOD_SLASH) {
 		if (argv[0][0]!=GOOD_SLASH) {
+			apiGetCurrentDirectory(g_strFarModuleName);
 			if (argv[0][0]=='.') {
-				g_strFarModuleName+= argv[0]+1;
+				g_strFarModuleName+= argv[0] + 1;
 			} else {
 				g_strFarModuleName+= GOOD_SLASH;
 				g_strFarModuleName+= argv[0];
 			}
 		} else
-			g_strFarModuleName = argv[0];
-		fprintf(stderr, "g_strFarModuleName=%ls\n", g_strFarModuleName.CPtr());
-		PrepareDiskPath(g_strFarModuleName);
+			g_strFarModuleName = argv[0];			
+	} else {
+		buf[buf_sz] = 0;
+		g_strFarModuleName = buf;
 	}
+			
+	
+
+	FARString dir = g_strFarModuleName;
+	CutToSlash(dir, true);
+	const wchar_t *last_element = PointToName(dir);
+	if (last_element && wcscmp(last_element, L"bin") == 0) {
+		CutToSlash(dir, false);
+		SetPathTranslationPrefix(dir);
+	}
+
+	fprintf(stderr, "argv[0]='%s' g_strFarModuleName='%ls' translation_prefix='%ls'\n", 
+		argv[0], g_strFarModuleName.CPtr(), GetPathTranslationPrefix());
+
+	PrepareDiskPath(g_strFarModuleName);
 }
 
 int FarAppMain(int argc, char **argv)
@@ -358,9 +375,21 @@ int FarAppMain(int argc, char **argv)
 	Opt.LoadPlug.PluginsPersonal=TRUE;
 	Opt.LoadPlug.PluginsCacheOnly=FALSE;
 
-	g_strFarPath=g_strFarModuleName;
-	CutToSlash(g_strFarPath,true);
+	char pid_str[32];
+	snprintf(pid_str, sizeof(pid_str) - 1, "%lu", (unsigned long)getpid());
+	setenv("FARPID", pid_str, 1);
+
+	g_strFarPath = g_strFarModuleName;
+
+	bool translated = TranslateFarString<TranslateInstallPath_Bin2Share>(g_strFarPath);
+	CutToSlash(g_strFarPath, true);
+	if (translated) {
+		// /usr/bin/something -> /usr/share/far2l
+		g_strFarPath.Append("/" APP_BASENAME);
+	}
+		
 	WINPORT(SetEnvironmentVariable)(L"FARHOME", g_strFarPath);
+
 	AddEndSlash(g_strFarPath);
 
 	// don't inherit from parent process in any case
@@ -373,8 +402,13 @@ int FarAppMain(int argc, char **argv)
 	for (int I=1; I<argc; I++)
 	{
 		std::wstring arg_w = MB2Wide(argv[I]);
+		if (arg_w.find(L"--") == 0) {
+			arg_w.erase(0, 1);
+		}
+		bool switchHandled = false;
 		if ((arg_w[0]==L'/' || arg_w[0]==L'-') && arg_w[1])
 		{
+			switchHandled = true;
 			switch (Upper(arg_w[1]))
 			{
 				case L'A':
@@ -455,22 +489,17 @@ int FarAppMain(int argc, char **argv)
 					{
 						Opt.LoadPlug.PluginsCacheOnly=TRUE;
 						Opt.LoadPlug.PluginsPersonal=FALSE;
+
+					} else if (Upper(arg_w[2]) == L'D' && !arg_w[3]) {
+						if (I + 1 < argc) {
+							I++;
+							arg_w = MB2Wide(argv[I]);
+							switchHandled = false;
+						}
 					}
 
 					break;
-				case L'?':
-				case L'H':
-					ControlObject::ShowCopyright(1);
-					show_help();
-					return 0;
-#ifdef DIRECT_RT
-				case L'D':
 
-					if (Upper(arg_w[2])==L'O' && !arg_w[3])
-						DirectRT=1;
-
-					break;
-#endif
 				case L'W':
 					{
 						Opt.WindowMode=TRUE;
@@ -478,7 +507,7 @@ int FarAppMain(int argc, char **argv)
 					break;
 			}
 		}
-		else // простые параметры. Их может быть max две штукА.
+		if (!switchHandled) // простые параметры. Их может быть max две штукА.
 		{
 			if (CntDestName < 2)
 			{
@@ -558,6 +587,7 @@ int FarAppMain(int argc, char **argv)
 
 	EmptyInternalClipboard();
 	doneMacroVarTable(1);
+	VTShell_Shutdown();//ensure VTShell deinitialized before statics destructors called
 	_OT(SysLog(L"[[[[[Exit of FAR]]]]]]]]]"));
 	return Result;
 }
@@ -608,6 +638,44 @@ static int libexec(const char *lib, const char *symbol, int argc, char *argv[])
 	return libexec_main(argc, argv);
 }
 
+int FarDispatchAnsiApplicationProtocolCommand(const char *str)
+{
+	const char *space = strchr(str, ' ');
+	if (!space)
+		return -1;
+
+	DWORD r;
+	std::string command(str, space - str);
+	std::string argument(UnescapeUnprintable(space + 1));
+	if (command.find("v") == 0) {
+		ModalViewFile(argument, false);
+		r = 0;
+	} else if (command.find("e") == 0) {
+		int StartLine = 0, StartChar = 0;
+		if (command.size() > 1 && isdigit(command[1])) {
+			StartLine = atoi(command.c_str() + 1);
+			size_t p = command.find(':');
+			if (p != std::string::npos)
+				StartChar = atoi(command.c_str() + p + 1);
+		}
+		//FIXME: modality doesn't work with this FFILEEDIT_ENABLEF6! (see abort after loop)
+		FileEditor *Editor=new FileEditor(StrMB2Wide(argument).c_str(), CP_AUTODETECT, 
+			FFILEEDIT_DISABLEHISTORY | FFILEEDIT_SAVETOSAVEAS | FFILEEDIT_CANNEWFILE,
+			StartLine, StartChar);
+		r = Editor->GetExitCode();
+		if (r != XC_LOADING_INTERRUPTED && r != XC_OPEN_ERROR) {
+			FrameManager->ExecuteModal();
+			//abort();
+		} else
+			delete Editor;
+		r = 0;
+	} else {
+		r = -1;
+	}
+	
+	return r;
+}
+
 int _cdecl main(int argc, char *argv[])
 {
 	char *name = strrchr(argv[0], GOOD_SLASH);
@@ -621,9 +689,19 @@ int _cdecl main(int argc, char *argv[])
 			if (strcmp(argv[1], "--libexec")==0)
 				return libexec(argv[2], argv[3], argc - 4, argv + 4);
 		}
+		if (argc > 1 &&
+		(strncasecmp(argv[1], "--h", 3) == 0
+		 || strncasecmp(argv[1], "-h", 2) == 0
+		 || strcasecmp(argv[1], "/h") == 0
+		 || strcasecmp(argv[1], "/?") == 0)) {
+
+			print_help(name);
+			return 0;
+		}
 	}
 
 	setlocale(LC_ALL, "");//otherwise non-latin keys missing with XIM input method
+
 	SetupFarPath(argc, argv);
 
 	apiEnableLowFragmentationHeap();

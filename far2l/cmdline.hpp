@@ -60,7 +60,7 @@ class CommandLine:public ScreenObject
 		FARString strLastCmdStr;
 		int LastCmdPartLength;
 		int LastKey;
-		TStack<PushPopRecord> ppstack;
+		int PushDirStackSize;
 
 	private:
 		virtual void DisplayObject();
@@ -81,6 +81,7 @@ class CommandLine:public ScreenObject
 
 		virtual void ResizeConsole();
 
+		std::string GetConsoleLog();
 		int GetCurDir(FARString &strCurDir);
 		BOOL SetCurDir(const wchar_t *CurDir);
 

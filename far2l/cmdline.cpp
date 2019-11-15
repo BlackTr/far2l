@@ -70,7 +70,8 @@ CommandLine::CommandLine():
 	CmdStr(CtrlObject->Cp(),0,true,CtrlObject->CmdHistory,0,(Opt.CmdLine.AutoComplete?EditControl::EC_ENABLEAUTOCOMPLETE:0)|EditControl::EC_ENABLEFNCOMPLETE),
 	BackgroundScreen(nullptr),
 	LastCmdPartLength(-1),
-	LastKey(0)
+	LastKey(0),
+	PushDirStackSize(0)
 {
 	CmdStr.SetEditBeyondEnd(FALSE);
 	SetPersistentBlocks(Opt.CmdLine.EditBlock);
@@ -162,12 +163,19 @@ void CommandLine::ProcessCompletion(bool possibilities)
 		VTCompletor vtc;		
 		if (possibilities) {
 			std::vector<std::string>  possibilities;
+			std::string last_cmd_word = cmd;
+			size_t last_space = last_cmd_word.rfind(' ');
+			if (last_space != std::string::npos)
+				last_cmd_word.erase(0, last_space + 1);
 			if (vtc.GetPossibilities(cmd, possibilities) && !possibilities.empty()) {
 				std::sort(possibilities.begin(), possibilities.end());
 				fprintf(stderr, "Possibilities: ");
 				for(auto &p : possibilities) {
 					fprintf(stderr, "%s ", p.c_str());
-					if (p.find(cmd)!=0) {
+					if (!last_cmd_word.empty() && p.find(last_cmd_word) == 0) {
+						p.insert(0, cmd.substr(0, cmd.size() - last_cmd_word.size()));
+
+					} else if (p.find(cmd) != 0) {
 						/*if (p.find(' ') != 0 && !cmd.empty() && cmd[cmd.size()-1]!=' ') {
 							p.insert(0, 1, ' ');
 						}*/
@@ -188,6 +196,19 @@ void CommandLine::ProcessCompletion(bool possibilities)
 	}	
 }
 
+std::string CommandLine::GetConsoleLog()
+{
+	++ProcessShowClock;
+	ShowBackground();
+	Redraw();
+	ScrBuf.Flush();
+	const std::string &histfile = VTLog::GetAsFile();
+	--ProcessShowClock;
+	Redraw();
+	ScrBuf.Flush();
+	return histfile;
+}
+
 int CommandLine::ProcessKey(int Key)
 {
 	const wchar_t *PStr;
@@ -203,26 +224,39 @@ int CommandLine::ProcessKey(int Key)
 		return TRUE;
 	}
 	
-	if ( Key==KEY_F4) { 
-		const std::string &histfile = VTLog::GetAsFile();
-		if (histfile.empty())
-			return TRUE;
-			
-		FileEditor *ShellEditor=new FileEditor(StrMB2Wide(histfile).c_str(), CP_UTF8, FFILEEDIT_DISABLEHISTORY | FFILEEDIT_NEW, std::numeric_limits<int>::max() );
-		unlink(histfile.c_str());
-		if (ShellEditor) {
-			DWORD editorExitCode = ShellEditor->GetExitCode();
-			if (editorExitCode != XC_LOADING_INTERRUPTED && editorExitCode != XC_OPEN_ERROR) {
-				FrameManager->ExecuteModal();
-			} else
-				delete ShellEditor;
-		}
-		
+	if (Key == (KEY_MSWHEEL_UP | KEY_CTRL | KEY_SHIFT))
+	{
+		const std::string &histfile = GetConsoleLog();
+		if (!histfile.empty())
+			ModalViewTempFile(histfile, true, true);
+		return TRUE;
+	}
+
+	if ( Key==KEY_CTRLSHIFTF3 || Key==KEY_F3) { 
+		const std::string &histfile = GetConsoleLog();
+		if (!histfile.empty()) 
+			ModalViewTempFile(histfile, true);
+		return TRUE;
+	}
+	
+	if ( Key==KEY_CTRLSHIFTF4 || Key==KEY_F4) { 
+		const std::string &histfile = GetConsoleLog();
+		if (!histfile.empty()) 
+			ModalEditTempFile(histfile, true);
 		return TRUE;
 	}
 	
 	if ( Key==KEY_F8) { 
-		CmdExecute(L"reset", true, false, true, false, false, false);
+		ClearScreen(COL_COMMANDLINEUSERSCREEN);
+		SaveBackground();
+		VTLog::Reset();
+		ShowBackground();
+		Redraw();
+//		ShellUpdatePanels(CtrlObject->Cp()->ActivePanel, FALSE);
+		if (Opt.ShowKeyBar)
+			CtrlObject->MainKeyBar->Show();
+
+//		CmdExecute(L"reset", true, false, true, false, false, false);
 		return TRUE;
 	}	
 		
@@ -450,8 +484,17 @@ int CommandLine::ProcessKey(int Key)
 
 			ProcessOSAliases(strStr);
 
-			if (!ActivePanel->ProcessPluginEvent(FE_COMMAND,(void *)strStr.CPtr()))
+			if (ActivePanel->ProcessPluginEvent(FE_COMMAND,(void *)strStr.CPtr())) {
+				FARString strCurDirFromPanel;
+				ActivePanel->GetCurDirPluginAware(strCurDirFromPanel);
+				strCurDir = strCurDirFromPanel;
+				Show();
+				ActivePanel->SetTitle();
+
+			} else {
 				CmdExecute(strStr, false, Key==KEY_SHIFTENTER||Key==KEY_SHIFTNUMENTER, false, false, false, Key == KEY_CTRLALTENTER || Key == KEY_CTRLALTNUMENTER);
+			}
+
 		}
 		return TRUE;
 		case KEY_CTRLU:
@@ -641,13 +684,11 @@ void CommandLine::GetPrompt(FARString &strDestStr)
 							*/
 						case L'+': // $+  - Отображение нужного числа знаков плюс (+) в зависимости от текущей глубины стека каталогов PUSHD, по одному знаку на каждый сохраненный путь.
 						{
-							DWORD ppstacksize=ppstack.size();
-
-							if (ppstacksize)
+							if (PushDirStackSize)
 							{
-								wchar_t * p = strDestStr.GetBuffer(strDestStr.GetLength()+ppstacksize+1);
-								wmemset(p + strDestStr.GetLength(),L'+',ppstacksize);
-								strDestStr.ReleaseBuffer(strDestStr.GetLength()+ppstacksize);
+								wchar_t * p = strDestStr.GetBuffer(strDestStr.GetLength()+PushDirStackSize+1);
+								wmemset(p + strDestStr.GetLength(),L'+',PushDirStackSize);
+								strDestStr.ReleaseBuffer(strDestStr.GetLength()+PushDirStackSize);
 							}
 
 							break;
@@ -679,18 +720,14 @@ void CommandLine::GetPrompt(FARString &strDestStr)
 							strDestStr += strDateTime;
 							break;
 						}
-						case L'N': // $N - Current drive
-						{
-							if (IsLocalPath(strCurDir) && IsSlash(strCurDir.At(2)))
-								strDestStr += Upper(strCurDir.At(0));
-							else
-								strDestStr += L'?';
-
-							break;
-						}
 						case L'P': // $P - Current drive and path
 						{
 							strDestStr += strCurDir;
+							break;
+						}
+						case L'#': // # or $ - depending of user root or not
+						{
+							strDestStr += Opt.IsUserAdmin ? L"#" : L"$";
 							break;
 						}
 					}
@@ -704,7 +741,7 @@ void CommandLine::GetPrompt(FARString &strDestStr)
 			}
 		}
 	}
-	else // default prompt = "$p$g"
+	else // default prompt = "$p$# "
 	{
 		strDestStr = strCurDir;
 		strDestStr += Opt.IsUserAdmin ? L"# " : L"$ ";

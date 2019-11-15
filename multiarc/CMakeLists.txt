@@ -135,7 +135,7 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(CMAKE_SHARED_MODULE_CREATE_CXX_FLAGS "${CMAKE_SHARED_MODULE_CREATE_CXX_FLAGS} -flat_namespace -undefined suppress")
 endif()
 
-target_link_libraries(multiarc utils)
+target_link_libraries(multiarc utils far2l)
 
 target_include_directories(multiarc PRIVATE src/formats/rar/unrar)
 target_include_directories(multiarc PRIVATE src)
@@ -148,7 +148,7 @@ target_compile_definitions(multiarc PRIVATE -DRARDLL -D_7ZIP_ST)
 
 set_target_properties(multiarc
   PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${INSTALL_DIR}/Plugins/multiarc/bin"
+    LIBRARY_OUTPUT_DIRECTORY "${INSTALL_DIR}/Plugins/multiarc/plug"
     PREFIX ""
     SUFFIX ".far-plug-mb")
 

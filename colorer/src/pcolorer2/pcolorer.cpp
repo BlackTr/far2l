@@ -1,6 +1,7 @@
-#include"pcolorer.h"
-#include"tools.h"
-#include"FarEditorSet.h"
+#include "pcolorer.h"
+#include "tools.h"
+#include "FarEditorSet.h"
+#include <utils.h>
 
 FarEditorSet *editorSet = NULL;
 PluginStartupInfo Info;
@@ -13,8 +14,24 @@ SHAREDSYMBOL void WINPORT_DllStartup(const char *path)
       int pos = module.lastIndexOf('/');
       pos = module.lastIndexOf('/',pos);
       PluginPath=new StringBuffer(DString(module, 0, pos));	
-	  printf("Colorer startup: %s\n", path);
 }
+
+StringBuffer *GetConfigPath(const DString &sub)
+{
+  struct stat s;
+  StringBuffer *path=new StringBuffer(PluginPath);
+  path->append(sub);
+  if (stat(path->getChars(), &s) == -1) {
+          std::wstring str(path->getWChars());
+          if (TranslateInstallPath_Lib2Share(str) ) {
+            path->setLength(0);
+            path->append(DString(str.c_str()));
+          }
+  }
+  return path;
+}
+
+
 //todo:
 /**
   Returns message from FAR current language.
@@ -119,6 +136,8 @@ SHAREDSYMBOL int WINAPI ProcessEditorInputW(const INPUT_RECORD *ir)
 {
   return editorSet->editorInput(ir);
 }
+
+
 
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1

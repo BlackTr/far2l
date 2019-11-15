@@ -37,11 +37,14 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "UnicodeString.hpp"
 #include "noncopyable.hpp"
 #include <string.h>
+#include <map>
+#include <vector>
+#include <memory>
+
 #define NT_MAX_PATH 32768
 
 struct FAR_FIND_DATA_EX
 {
-	DWORD    dwFileAttributes;
 	union {
 		FILETIME ftLastAccessTime;
 		FILETIME ftUnixAccessTime;
@@ -57,7 +60,14 @@ struct FAR_FIND_DATA_EX
 	FILETIME ftChangeTime;
 	uint64_t nFileSize;
 	uint64_t nPackSize;
+	uint64_t UnixDevice;
+	uint64_t UnixNode;
+	uid_t UnixOwner;
+	gid_t UnixGroup;
+
+	DWORD dwFileAttributes;
 	DWORD dwUnixMode;
+	DWORD nHardLinks;
 	struct
 	{
 		DWORD dwReserved0;
@@ -68,16 +78,21 @@ struct FAR_FIND_DATA_EX
 
 	void Clear()
 	{
-		dwFileAttributes=0;
-		memset(&ftCreationTime,0,sizeof(ftCreationTime));
 		memset(&ftLastAccessTime,0,sizeof(ftLastAccessTime));
 		memset(&ftLastWriteTime,0,sizeof(ftLastWriteTime));
+		memset(&ftCreationTime,0,sizeof(ftCreationTime));
 		memset(&ftChangeTime,0,sizeof(ftChangeTime));
-		nFileSize=0;
-		nPackSize=0;
-		dwReserved0=0;
-		dwReserved1=0;
-		dwUnixMode=0;
+		nFileSize = 0;
+		nPackSize = 0;
+		UnixDevice = 0;
+		UnixNode = 0;
+		UnixOwner = 0;
+		UnixGroup = 0;
+		dwFileAttributes = 0;
+		dwUnixMode = 0;
+		nHardLinks = 0;
+		dwReserved0 = 0;
+		dwReserved1 = 0;
 		strFileName.Clear();
 	}
 
@@ -85,14 +100,19 @@ struct FAR_FIND_DATA_EX
 	{
 		if (this != &ffdexCopy)
 		{
-			dwFileAttributes=ffdexCopy.dwFileAttributes;
-			ftCreationTime=ffdexCopy.ftCreationTime;
 			ftLastAccessTime=ffdexCopy.ftLastAccessTime;
 			ftLastWriteTime=ffdexCopy.ftLastWriteTime;
+			ftCreationTime=ffdexCopy.ftCreationTime;
 			ftChangeTime=ffdexCopy.ftChangeTime;
 			nFileSize=ffdexCopy.nFileSize;
 			nPackSize=ffdexCopy.nPackSize;
+			UnixDevice=ffdexCopy.UnixDevice;
+			UnixNode=ffdexCopy.UnixNode;
+			UnixOwner=ffdexCopy.UnixOwner;
+			UnixGroup=ffdexCopy.UnixGroup;
+			dwFileAttributes=ffdexCopy.dwFileAttributes;
 			dwUnixMode=ffdexCopy.dwUnixMode;
+			nHardLinks = ffdexCopy.nHardLinks;;
 			dwReserved0=ffdexCopy.dwReserved0;
 			dwReserved1=ffdexCopy.dwReserved1;
 			strFileName=ffdexCopy.strFileName;
@@ -105,7 +125,7 @@ struct FAR_FIND_DATA_EX
 class FindFile: private NonCopyable
 {
 public:
-	FindFile(LPCWSTR Object, bool ScanSymLink = true);
+	FindFile(LPCWSTR Object, bool ScanSymLink = true, DWORD WinPortFindFlags = FIND_FILE_FLAG_NO_CUR_UP); //FIND_FILE_FLAG_NO_CUR_UP is enforced
 	~FindFile();
 	bool Get(FAR_FIND_DATA_EX& FindData);
 
@@ -115,29 +135,55 @@ private:
 	FAR_FIND_DATA_EX Data;
 };
 
+typedef std::map<std::string, std::vector<char> > FileExtendedAttributes;
+
 class File: private NonCopyable
 {
 public:
 	File();
-	~File();
-	bool Open(LPCWSTR Object, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDistribution, DWORD dwFlagsAndAttributes=0, HANDLE hTemplateFile=nullptr, bool ForceElevation=false);
-	bool Read(LPVOID Buffer, DWORD NumberOfBytesToRead, LPDWORD NumberOfBytesRead, LPOVERLAPPED Overlapped = nullptr);
-	bool Write(LPCVOID Buffer, DWORD NumberOfBytesToWrite, LPDWORD NumberOfBytesWritten, LPOVERLAPPED Overlapped = nullptr) const;
-	bool SetPointer(INT64 DistanceToMove, PINT64 NewFilePointer, DWORD MoveMethod);
-	bool GetPointer(INT64& Pointer){return SetPointer(0, &Pointer, FILE_CURRENT);}
-	bool SetEnd();
-	bool GetTime(LPFILETIME CreationTime, LPFILETIME LastAccessTime, LPFILETIME LastWriteTime, LPFILETIME ChangeTime);
-	bool SetTime(const FILETIME* CreationTime, const FILETIME* LastAccessTime, const FILETIME* LastWriteTime, const FILETIME* ChangeTime);
-	bool GetSize(UINT64& Size);
-	bool FlushBuffers();
-	bool Chmod(DWORD dwUnixMode);
-	bool Close();
-	bool Eof();
+	virtual ~File();
+	virtual bool Open(LPCWSTR Object, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDistribution, DWORD dwFlagsAndAttributes=0, HANDLE hTemplateFile=nullptr, bool ForceElevation=false);
+	virtual bool Read(LPVOID Buffer, DWORD NumberOfBytesToRead, LPDWORD NumberOfBytesRead, LPOVERLAPPED Overlapped = nullptr);
+	virtual bool Write(LPCVOID Buffer, DWORD NumberOfBytesToWrite, LPDWORD NumberOfBytesWritten, LPOVERLAPPED Overlapped = nullptr);
+	virtual bool SetPointer(INT64 DistanceToMove, PINT64 NewFilePointer, DWORD MoveMethod);
+	virtual bool GetPointer(INT64& Pointer){return SetPointer(0, &Pointer, FILE_CURRENT);}
+	virtual bool SetEnd();
+	virtual bool GetTime(LPFILETIME CreationTime, LPFILETIME LastAccessTime, LPFILETIME LastWriteTime, LPFILETIME ChangeTime);
+	virtual bool SetTime(const FILETIME* CreationTime, const FILETIME* LastAccessTime, const FILETIME* LastWriteTime, const FILETIME* ChangeTime);
+	virtual bool GetSize(UINT64& Size);
+	virtual bool FlushBuffers();
+	virtual bool Chmod(DWORD dwUnixMode);
+	virtual FemaleBool QueryFileExtendedAttributes(FileExtendedAttributes &xattr);
+	virtual FemaleBool SetFileExtendedAttributes(const FileExtendedAttributes &xattr);
+	virtual bool Close();
+	virtual bool Eof();
 	bool Opened() const {return Handle != INVALID_HANDLE_VALUE;}
 
 private:
 	HANDLE Handle;
 };
+
+class FileSeekDefer: public File
+{
+public:
+	FileSeekDefer();
+	virtual ~FileSeekDefer();
+
+	virtual bool Open(LPCWSTR Object, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDistribution, DWORD dwFlagsAndAttributes=0, HANDLE hTemplateFile=nullptr, bool ForceElevation=false);
+	virtual bool Read(LPVOID Buffer, DWORD NumberOfBytesToRead, LPDWORD NumberOfBytesRead, LPOVERLAPPED Overlapped = nullptr);
+	virtual bool Write(LPCVOID Buffer, DWORD NumberOfBytesToWrite, LPDWORD NumberOfBytesWritten, LPOVERLAPPED Overlapped = nullptr);
+	virtual bool SetPointer(INT64 DistanceToMove, PINT64 NewFilePointer, DWORD MoveMethod);
+	virtual bool GetPointer(INT64& Pointer);
+	virtual bool SetEnd();
+	virtual bool Eof();
+
+private:
+	bool FlushPendingSeek();
+
+	UINT64 CurrentPointer, Size;
+	bool SeekPending;
+};
+
 
 DWORD apiGetEnvironmentVariable(
     const wchar_t *lpwszName,
@@ -187,7 +233,8 @@ void apiFreeFindData(
 BOOL apiGetFindDataEx(
     const wchar_t *lpwszFileName,
     FAR_FIND_DATA_EX& FindData,
-    bool ScanSymLink=true);
+    bool ScanSymLink = true,
+    DWORD WinPortFindFlags = 0);
 
 bool apiGetFileSizeEx(
     HANDLE hFile,
@@ -266,6 +313,33 @@ BOOL apiSetFileAttributes(
     LPCWSTR lpFileName,
     DWORD dwFileAttributes
 );
+
+struct IUnmakeWritable
+{
+	virtual ~IUnmakeWritable() {} 
+	virtual void Unmake() = 0;
+};
+
+typedef std::unique_ptr<IUnmakeWritable>	IUnmakeWritablePtr;
+
+IUnmakeWritablePtr apiMakeWritable(LPCWSTR lpFileName);
+
+class TemporaryMakeWritable
+{
+	IUnmakeWritablePtr _unmake;
+
+public:
+	inline TemporaryMakeWritable(LPCWSTR lpFileName) 
+		: _unmake(apiMakeWritable(lpFileName))
+	{
+	}
+	
+	inline ~TemporaryMakeWritable()
+	{
+		if (_unmake)
+			_unmake->Unmake();
+	}
+};
 
 void InitCurrentDirectory();
 

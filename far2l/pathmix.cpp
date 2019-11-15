@@ -36,6 +36,9 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "pathmix.hpp"
 #include "strmix.hpp"
+#include "panel.hpp"
+#include <time.h>
+#include <sys/time.h>
 
 NTPath::NTPath(LPCWSTR Src)
 {
@@ -420,40 +423,6 @@ bool CutToSlash(FARString &strStr, bool bInclude)
 	return false;
 }
 
-FARString &CutToNameUNC(FARString &strPath)
-{
-	wchar_t *lpwszPath = strPath.GetBuffer();
-
-	if (IsSlash(lpwszPath[0]) && IsSlash(lpwszPath[1]))
-	{
-		lpwszPath+=2;
-
-		for (int i=0; i<2; i++)
-		{
-			while (*lpwszPath && !IsSlash(*lpwszPath))
-				lpwszPath++;
-
-			if (*lpwszPath)
-				lpwszPath++;
-		}
-	}
-
-	wchar_t *lpwszNamePtr = lpwszPath;
-
-	while (*lpwszPath)
-	{
-		if (IsSlash(*lpwszPath))
-			lpwszNamePtr = lpwszPath+1;
-
-		lpwszPath++;
-	}
-
-	*lpwszNamePtr = 0;
-	strPath.ReleaseBuffer();
-
-	return strPath;
-}
-
 FARString &CutToFolderNameIfFolder(FARString &strPath)
 {
 	wchar_t *lpwszPath = strPath.GetBuffer();
@@ -477,38 +446,6 @@ FARString &CutToFolderNameIfFolder(FARString &strPath)
 
 	strPath.ReleaseBuffer();
 	return strPath;
-}
-
-const wchar_t *PointToNameUNC(const wchar_t *lpwszPath)
-{
-	if (!lpwszPath)
-		return nullptr;
-
-	if (IsSlash(lpwszPath[0]) && IsSlash(lpwszPath[1]))
-	{
-		lpwszPath+=2;
-
-		for (int i=0; i<2; i++)
-		{
-			while (*lpwszPath && !IsSlash(*lpwszPath))
-				lpwszPath++;
-
-			if (*lpwszPath)
-				lpwszPath++;
-		}
-	}
-
-	const wchar_t *lpwszNamePtr = lpwszPath;
-
-	while (*lpwszPath)
-	{
-		if (IsSlash(*lpwszPath))
-			lpwszNamePtr = lpwszPath+1;
-
-		lpwszPath++;
-	}
-
-	return lpwszNamePtr;
 }
 
 const wchar_t *FirstSlash(const wchar_t *String)
@@ -570,7 +507,7 @@ size_t GetPathRootLength(const FARString &Path)
 	unsigned PrefixLen = 0;
 	bool IsUNC = false;
 
-	if (Path.Equal(0,8,L"//?/UNC/",8))
+	/* if (Path.Equal(0,8,L"//?/UNC/",8))
 	{
 		PrefixLen = 8;
 		IsUNC = true;
@@ -579,7 +516,7 @@ size_t GetPathRootLength(const FARString &Path)
 	{
 		PrefixLen = 4;
 	}
-	else if (Path.Equal(0,2,L"//",2))
+	else */ if (Path.Equal(0,2,L"//",2))
 	{
 		PrefixLen = 2;
 		IsUNC = true;
@@ -655,9 +592,3 @@ bool IsRootPath(const FARString &Path)
 	return false;
 }
 
-bool PathStartsWith(const FARString &Path, const FARString &Start)
-{
-	FARString PathPart(Start);
-	DeleteEndSlash(PathPart, true);
-	return Path.Equal(0, PathPart) && (Path.GetLength() == PathPart.GetLength() || IsSlash(Path[PathPart.GetLength()]));
-}

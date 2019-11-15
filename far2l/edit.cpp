@@ -57,17 +57,19 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "history.hpp"
 #include "vmenu.hpp"
 #include "chgmmode.hpp"
+#include  <cwctype>
 
 static int Recurse=0;
 
 enum {EOL_NONE,EOL_CR,EOL_LF,EOL_CRLF,EOL_CRCRLF};
 static const wchar_t *EOL_TYPE_CHARS[]={L"",L"\r",L"\n",L"\r\n",L"\r\r\n"};
 
-#define EDMASK_ANY   L'X' // позволяет вводить в строку ввода любой символ;
-#define EDMASK_DSS   L'#' // позволяет вводить в строку ввода цифры, пробел и знак минуса;
-#define EDMASK_DIGIT L'9' // позволяет вводить в строку ввода только цифры;
-#define EDMASK_ALPHA L'A' // позволяет вводить в строку ввода только буквы.
-#define EDMASK_HEX   L'H' // позволяет вводить в строку ввода шестнадцатиричные символы.
+#define EDMASK_ANY		L'X' // позволяет вводить в строку ввода любой символ;
+#define EDMASK_DSS		L'#' // позволяет вводить в строку ввода цифры, пробел и знак минуса;
+#define EDMASK_DIGIT	L'9' // позволяет вводить в строку ввода только цифры;
+#define EDMASK_DIGITS	L'N' // позволяет вводить в строку ввода только цифры и пробелы;
+#define EDMASK_ALPHA	L'A' // позволяет вводить в строку ввода только буквы.
+#define EDMASK_HEX		L'H' // позволяет вводить в строку ввода шестнадцатиричные символы.
 
 class DisableCallback
 {
@@ -918,7 +920,7 @@ int Edit::ProcessKey(int Key)
 
 			if (Mask && *Mask)
 			{
-				wchar_t *ShortStr=new wchar_t[StrSize+1];
+				wchar_t *ShortStr=new(std::nothrow) wchar_t[StrSize+1];
 
 				if (!ShortStr)
 					return FALSE;
@@ -1178,7 +1180,7 @@ int Edit::ProcessKey(int Key)
 
 			if (Mask && *Mask)
 			{
-				wchar_t *ShortStr=new wchar_t[StrSize+1];
+				wchar_t *ShortStr=new(std::nothrow) wchar_t[StrSize+1];
 
 				if (!ShortStr)
 					return FALSE;
@@ -1212,7 +1214,7 @@ int Edit::ProcessKey(int Key)
 
 			if (Mask && *Mask)
 			{
-				wchar_t *ShortStr=new wchar_t[StrSize+1];
+				wchar_t *ShortStr=new(std::nothrow) wchar_t[StrSize+1];
 
 				if (!ShortStr)
 					return FALSE;
@@ -1307,7 +1309,7 @@ int Edit::ProcessKey(int Key)
 
 			if (Mask && *Mask)
 			{
-				wchar_t *ShortStr=new wchar_t[StrSize+1];
+				wchar_t *ShortStr=new(std::nothrow) wchar_t[StrSize+1];
 
 				if (!ShortStr)
 					return FALSE;
@@ -1357,7 +1359,7 @@ int Edit::ProcessKey(int Key)
 				{
 					if (Mask && *Mask)
 					{
-						wchar_t *ShortStr=new wchar_t[StrSize+1];
+						wchar_t *ShortStr=new(std::nothrow) wchar_t[StrSize+1];
 
 						if (!ShortStr)
 							return FALSE;
@@ -1451,7 +1453,7 @@ int Edit::ProcessKey(int Key)
 		default:
 		{
 //      _D(SysLog(L"Key=0x%08X",Key));
-			if (Key==KEY_NONE || Key==KEY_IDLE || Key==KEY_ENTER || Key==KEY_NUMENTER || Key>=65536)
+			if (Key==KEY_ENTER || Key>=EXTENDED_KEY_BASE) // KEY_NUMENTER,KEY_IDLE,KEY_NONE covered by >=EXTENDED_KEY_BASE
 				break;
 
 			if (!Flags.Check(FEDITLINE_PERSISTENTBLOCKS))
@@ -1978,7 +1980,7 @@ void Edit::InsertBinaryString(const wchar_t *Str,int Length)
 			}
 
 			int TmpSize=StrSize-CurPos;
-			wchar_t *TmpStr=new wchar_t[TmpSize+16];
+			wchar_t *TmpStr=new(std::nothrow) wchar_t[TmpSize+16];
 
 			if (!TmpStr)
 				return;
@@ -2322,7 +2324,7 @@ void Edit::SetTabCurPos(int NewPos)
 
 	if (Mask && *Mask)
 	{
-		wchar_t *ShortStr=new wchar_t[StrSize+1];
+		wchar_t *ShortStr=new(std::nothrow) wchar_t[StrSize+1];
 
 		if (!ShortStr)
 			return;
@@ -2826,15 +2828,17 @@ int Edit::KeyMatchedMask(int Key)
 {
 	int Inserted=FALSE;
 
-	if (Mask[CurPos]==EDMASK_ANY || Key == L' ')
+	if (Mask[CurPos]==EDMASK_ANY)
 		Inserted=TRUE;
-	else if (Mask[CurPos]==EDMASK_DSS && (iswdigit(Key) /*|| Key==L' '*/ || Key==L'-'))
+	else if (Mask[CurPos] == EDMASK_DSS && (std::iswdigit(Key) || Key == L' ' || Key == L'-'))
 		Inserted=TRUE;
-	else if (Mask[CurPos]==EDMASK_DIGIT && (iswdigit(Key)))
+	else if (Mask[CurPos] == EDMASK_DIGITS && (std::iswdigit(Key) || Key == L' '))
 		Inserted=TRUE;
-	else if (Mask[CurPos]==EDMASK_ALPHA && IsAlpha(Key))
+	else if (Mask[CurPos] == EDMASK_DIGIT && (std::iswdigit(Key)))
 		Inserted=TRUE;
-	else if (Mask[CurPos]==EDMASK_HEX && (iswdigit(Key) || (Upper(Key)>=L'A' && Upper(Key)<=L'F') || (Upper(Key)>=L'a' && Upper(Key)<=L'f')))
+	else if (Mask[CurPos] == EDMASK_ALPHA && IsAlpha(Key))
+		Inserted=TRUE;
+	else if (Mask[CurPos] == EDMASK_HEX && std::iswxdigit(Key))
 		Inserted=TRUE;
 
 	return Inserted;
@@ -2842,7 +2846,7 @@ int Edit::KeyMatchedMask(int Key)
 
 int Edit::CheckCharMask(wchar_t Chr)
 {
-	return (Chr==EDMASK_ANY || Chr==EDMASK_DIGIT || Chr==EDMASK_DSS || Chr==EDMASK_ALPHA || Chr==EDMASK_HEX)?TRUE:FALSE;
+	return (Chr==EDMASK_ANY || Chr==EDMASK_DIGIT || Chr==EDMASK_DIGITS || Chr==EDMASK_DSS || Chr==EDMASK_ALPHA || Chr==EDMASK_HEX)?TRUE:FALSE;
 }
 
 void Edit::SetDialogParent(DWORD Sets)
@@ -3009,6 +3013,7 @@ static void FilteredAddToMenu(VMenu &menu, const FARString &filter, const FARStr
 
 void EditControl::PopulateCompletionMenu(VMenu &ComplMenu, const FARString &strFilter)
 {
+	SudoSilentQueryRegion ssqr;
 	if (pCustomCompletionList)
 	{
 		for (const auto &possibility : *pCustomCompletionList) 

@@ -51,6 +51,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pathmix.hpp"
 #include "strmix.hpp"
 #include "wakeful.hpp"
+#include "config.hpp"
 
 static void DrawGetDirInfoMsg(const wchar_t *Title,const wchar_t *Name,const UINT64 Size)
 {
@@ -90,7 +91,7 @@ int GetDirInfo(const wchar_t *Title,
 	UndoGlobalSaveScrPtr UndSaveScr(&SaveScr);
 	TPreRedrawFuncGuard preRedrawFuncGuard(PR_DrawGetDirInfoMsg);
 	wakeful W;
-	ScanTree ScTree(FALSE,TRUE,(Flags&GETDIRINFO_SCANSYMLINKDEF?(DWORD)-1:(Flags&GETDIRINFO_SCANSYMLINK)));
+	ScanTree ScTree(FALSE,TRUE, ( (Flags&GETDIRINFO_SCANSYMLINKDEF) ? -1 : ((Flags&GETDIRINFO_SCANSYMLINK) != 0) ) );
 	FAR_FIND_DATA_EX FindData;
 	clock_t StartTime=GetProcessUptimeMSec();
 	SetCursorType(FALSE,0);
@@ -110,7 +111,7 @@ int GetDirInfo(const wchar_t *Title,
 
 	ConsoleTitle OldTitle;
 	RefreshFrameManager frref(ScrX,ScrY,MsgWaitTime,Flags&GETDIRINFO_DONTREDRAWFRAME);
-	DWORD SectorsPerCluster=0,BytesPerSector=0,FreeClusters=0,Clusters=0;
+	//DWORD SectorsPerCluster=0,BytesPerSector=0,FreeClusters=0,Clusters=0;
 
 	//todo if (GetDiskFreeSpace(strDriveRoot,&SectorsPerCluster,&BytesPerSector,&FreeClusters,&Clusters))
 	//	ClusterSize=SectorsPerCluster*BytesPerSector;
@@ -119,8 +120,18 @@ int GetDirInfo(const wchar_t *Title,
 	strLastDirName.Clear();
 	strCurDirName.Clear();
 	DirCount=FileCount=0;
-	FileSize=CompressedFileSize=RealSize=0;
-	ScTree.SetFindPath(DirName,L"*");
+	FileSize=CompressedFileSize=RealSize = 0;
+	ScTree.SetFindPath(DirName, L"*", 0);
+	ScannedINodes scanned_inodes;
+
+	struct stat s = {0};
+	if (sdc_stat(Wide2MB(DirName).c_str(), &s) == 0) {
+		if (!Opt.OnlyFilesSize)
+			FileSize = s.st_size;//include size of root dir's node
+		ClusterSize = s.st_blksize;//TODO: check if its best thing to be used here
+	} else {
+		ClusterSize = 512;//
+	}
 
 	while (ScTree.GetNextName(&FindData,strFullName))
 	{
@@ -167,19 +178,39 @@ int GetDirInfo(const wchar_t *Title,
 			SetCursorType(FALSE,0);
 			DrawGetDirInfoMsg(Title,ShowDirName,FileSize);
 		}
+		if (FindData.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+			//include own size of symlink's to total size
+			if (sdc_lstat(strFullName.GetMB().c_str(), &s) == 0 && !Opt.OnlyFilesSize) {
+				FileSize+= s.st_size;
+			}
+			if (!ScTree.IsSymlinksScanEnabled())
+				continue;
+		}
+		if (!scanned_inodes.Put(FindData.UnixDevice, FindData.UnixNode)) {
+			continue;
+		}
 
 		if (FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
 		{
 			// Счётчик каталогов наращиваем только если не включен фильтр,
 			// в противном случае это будем делать в подсчёте количества файлов
 			if (!(Flags&GETDIRINFO_USEFILTER))
+			{
 				DirCount++;
+				if (!Opt.OnlyFilesSize)
+					FileSize+= FindData.nFileSize;
+			}
 			else
 			{
 				// Если каталог не попадает под фильтр то его надо полностью
 				// пропустить - иначе при включенном подсчёте total
 				// он учтётся (mantis 551)
-				if (!Filter->FileInFilter(FindData))
+				if (Filter->FileInFilter(FindData))
+				{
+					if (!Opt.OnlyFilesSize)
+						FileSize+= FindData.nFileSize;//TODO: add size at same condifion as DirCount increment
+				}
+				else
 					ScTree.SkipDir();
 			}
 		}

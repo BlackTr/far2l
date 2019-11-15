@@ -43,15 +43,14 @@ Far Manager plugins that use this header file can be distributed under any
 other possible license with no implications from the above license on them.
 */
 
-#define FARMANAGERVERSION_MAJOR 1
-#define FARMANAGERVERSION_MINOR 80
-#define FARMANAGERVERSION_BUILD 496
+#define FARMANAGERVERSION_MAJOR 2
+#define FARMANAGERVERSION_MINOR 2
 
 #ifndef RC_INVOKED
 
-#define MAKEFARVERSION(major,minor,build) ( ((major)<<8) | (minor) | ((build)<<16))
+#define MAKEFARVERSION(major,minor) ( ((major)<<16) | (minor))
 
-#define FARMANAGERVERSION MAKEFARVERSION(FARMANAGERVERSION_MAJOR,FARMANAGERVERSION_MINOR,FARMANAGERVERSION_BUILD)
+#define FARMANAGERVERSION MAKEFARVERSION(FARMANAGERVERSION_MAJOR,FARMANAGERVERSION_MINOR)
 
 #ifdef FAR_USE_INTERNALS
 #else // ELSE FAR_USE_INTERNALS
@@ -1071,7 +1070,7 @@ enum FarSystemSettings
 {
 	FSS_DELETETORECYCLEBIN             = 0x00000002,
 	FSS_WRITETHROUGH                   = 0x00000004,
-	FSS_COPYFILESOPENEDFORWRITING      = 0x00000008,
+	FSS_RESERVED                       = 0x00000008,
 	FSS_SAVECOMMANDSHISTORY            = 0x00000020,
 	FSS_SAVEFOLDERSHISTORY             = 0x00000040,
 	FSS_SAVEVIEWANDEDITHISTORY         = 0x00000080,

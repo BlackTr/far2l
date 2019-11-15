@@ -50,6 +50,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "palette.hpp"
 #include "strmix.hpp"
 #include "console.hpp"
+#include "vtshell.h"
 
 BOOL WINAPI CtrlHandler(DWORD CtrlType);
 
@@ -63,8 +64,8 @@ static SMALL_RECT windowholder_rect;
 WCHAR Oem2Unicode[256];
 WCHAR BoxSymbols[64];
 
-COORD InitSize={0};
-COORD CurSize={0};
+COORD InitSize{};
+COORD CurSize{};
 SHORT ScrX=0,ScrY=0;
 SHORT PrevScrX=-1,PrevScrY=-1;
 DWORD InitialConsoleMode=0;
@@ -209,7 +210,7 @@ void FlushInputBuffer()
 
 void SetVideoMode()
 {
-	if (!IsFullscreen() && Opt.AltF9)
+	if (!IsFullscreen())
 	{
 		ChangeVideoMode(InitSize.X==CurSize.X && InitSize.Y==CurSize.Y);
 	}
@@ -225,6 +226,7 @@ void ChangeVideoMode(int Maximized)
 
 	if (Maximized)
 	{
+		WINPORT(SetConsoleWindowMaximized)(TRUE);
 		//SendMessage(Console.GetWindow(),WM_SYSCOMMAND,SC_MAXIMIZE,0);
 		coordScreen = Console.GetLargestWindowSize();
 		coordScreen.X+=Opt.ScrSize.DeltaXY.X;
@@ -232,6 +234,7 @@ void ChangeVideoMode(int Maximized)
 	}
 	else
 	{
+		WINPORT(SetConsoleWindowMaximized)(FALSE);
 		//SendMessage(Console.GetWindow(),WM_SYSCOMMAND,SC_RESTORE,0);
 		coordScreen = InitSize;
 	}
@@ -349,7 +352,12 @@ BOOL WINAPI CtrlHandler(DWORD CtrlType)
 		return TRUE;
 	}
 
+	if (!CtrlObject->Plugins.MayExitFar()) {
+		return TRUE;
+	}
+
 	CloseFAR=TRUE;
+
 
 	/* $ 30.08.2001 IS
 	   При закрытии окна "по кресту" всегда возвращаем TRUE, в противном случае
@@ -365,6 +373,12 @@ BOOL WINAPI CtrlHandler(DWORD CtrlType)
 
 		return FALSE;
 	}
+
+	// write some dummy console input to kick any pending ReadConsoleInput
+	INPUT_RECORD ir = {};
+	ir.EventType = NOOP_EVENT;
+	DWORD dw = 0;
+	WINPORT(WriteConsoleInput)(0, &ir, 1, &dw);
 
 	return TRUE;
 }
@@ -1223,8 +1237,8 @@ int HiFindNextVisualPos(const wchar_t *Str, int Pos, int Direct)
 bool IsFullscreen()
 {
 	bool Result=false;
-	DWORD ModeFlags=0;
-	/*if(Console.GetDisplayMode(ModeFlags) && ModeFlags&CONSOLE_FULLSCREEN_HARDWARE)
+	/*DWORD ModeFlags=0;
+	if(Console.GetDisplayMode(ModeFlags) && ModeFlags&CONSOLE_FULLSCREEN_HARDWARE)
 	{
 		Result=true;
 	}*/

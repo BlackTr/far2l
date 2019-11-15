@@ -288,7 +288,7 @@ static const wchar_t *_SubstFileName(const wchar_t *CurStr,TSubstData *PSubstDat
 	// !\       Текущий путь
 	// !/       Короткое имя текущего пути
 	// Ниже идет совмещение кода для разбора как !\ так и !/
-	if (!StrCmpN(CurStr,L"!/",2) || !StrCmpN(CurStr,L"!=/",3) || !StrCmpN(CurStr,L"!/",2) || !StrCmpN(CurStr,L"!=/",3))
+	if (!StrCmpN(CurStr,L"!/",2) || !StrCmpN(CurStr,L"!=/",3))//!StrCmpN(CurStr,L"!\\",2) || !StrCmpN(CurStr,L"!=\\",3) || 
 	{
 		FARString strCurDir;
 		int RealPath= CurStr[1]==L'='?1:0;
@@ -436,9 +436,9 @@ int ReplaceVariables(FARString &strStr,TSubstData *PSubstData)
 	const wchar_t *Str=strStr;
 	const wchar_t * const StartStr=Str;
 
-	if (*Str==L'\"')
-		while (*Str && *Str!=L'\"')
-			Str++;
+//	if (*Str==L'\"')
+//		while (*Str && *Str!=L'\"')
+//			Str++;
 
 	DialogItemEx *DlgData = new DialogItemEx[MaxSize+2];
 	FARString HistoryName[MaxSize];
@@ -671,7 +671,7 @@ bool Panel::MakeListFile(FARString &strListFileName,const wchar_t *Modifers)
 		File ListFile;
 		if (ListFile.Open(strListFileName,GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,CREATE_ALWAYS))
 		{
-			UINT CodePage=CP_OEMCP;
+			UINT CodePage=CP_UTF8;
 			LPCVOID Eol = NATIVE_EOL;
 			DWORD EolSize = strlen(NATIVE_EOL);
 

@@ -50,18 +50,20 @@ FARString &FormatNumber(const wchar_t *Src, FARString &strDest, int NumDigits)
 		result = L"0";
 	} else {
 		size_t i = 0;
-		do {
+		for (;;) {
 			--part;
 			result.Insert(0, *part);
+			if (part == Src) break;
 			++i;
 			if ((i % 3)==0)
 				result.Insert(0, L' ');
-		} while (part != Src);
+		}
 	}
 	if (dot) {
 		result.Append(dot, std::min(wcslen(dot), (size_t)NumDigits + 1) );
 	}
 	strDest = result;
+	return strDest;
 
 	/*
 	static bool first = true;
@@ -174,7 +176,7 @@ static FARString escapeSpace(const wchar_t* str) {
 		return "''";
 	FARString result;
 	for (const wchar_t *cur = str; *cur; ++cur) {
-		if (wcschr(Opt.strQuotedSymbols, *cur) != NULL)
+		if (wcschr(Opt.strQuotedSymbols, *cur) != nullptr)
 			result.Append('\\');
 		result.Append(*cur);
 	}
@@ -643,7 +645,7 @@ void UnquoteExternal(FARString &strStr)
 
 #define UNIT_COUNT 7 // byte, kilobyte, megabyte, gigabyte, terabyte, petabyte, exabyte.
 
-static wchar_t UnitStr[UNIT_COUNT][2][MAX_UNITSTR_SIZE]={0};
+static wchar_t UnitStr[UNIT_COUNT][2][MAX_UNITSTR_SIZE]={};
 
 void PrepareUnitStr()
 {
@@ -729,9 +731,9 @@ FARString & WINAPI FileSizeToStr(FARString &strDestStr, uint64_t Size, int Width
 				Width=0;
 
 			if (Economic)
-				strDestStr.Format(L"%*.*ls%1.1s",Width,Width,strStr.CPtr(),UnitStr[IndexB][IndexDiv]);
+				strDestStr.Format(L"%*.*ls%1.1ls",Width,Width,strStr.CPtr(),UnitStr[IndexB][IndexDiv]);
 			else
-				strDestStr.Format(L"%*.*ls %1.1s",Width,Width,strStr.CPtr(),UnitStr[IndexB][IndexDiv]);
+				strDestStr.Format(L"%*.*ls %1.1ls",Width,Width,strStr.CPtr(),UnitStr[IndexB][IndexDiv]);
 		}
 		else
 			strDestStr.Format(L"%*.*ls",Width,Width,strStr.CPtr());
@@ -1115,84 +1117,59 @@ FARString& WINAPI FarFormatText(const wchar_t *SrcText,     // источник
 //   WordDiv  - набор разделителей слова в кодировке OEM
   возвращает указатель на начало слова
 */
-const wchar_t * const CalcWordFromString(const wchar_t *Str,int CurPos,int *Start,int *End, const wchar_t *WordDiv0)
-{
-	int I, J, StartWPos, EndWPos;
-	DWORD DistLeft, DistRight;
-	int StrSize=StrLength(Str);
 
-	if (CurPos >= StrSize)
+const wchar_t * CalcWordFromString(const wchar_t *Str,int CurPos,int *Start,int *End, const wchar_t *WordDiv0)
+{
+	int StartWPos, EndWPos;
+
+	const int StrSize = StrLength(Str);
+
+	if (CurPos < 0 || CurPos >= StrSize)
 		return nullptr;
 
-	FARString strWordDiv(WordDiv0);
-	strWordDiv += L" \t\n\r";
-
-	if (IsWordDiv(strWordDiv,Str[CurPos]))
+	if (IsWordDivSTNR(WordDiv0, Str[CurPos]))
 	{
 		// вычисляем дистанцию - куда копать, где ближе слово - слева или справа
-		I=J=CurPos;
+		int L, R;
+
 		// копаем влево
-		DistLeft=-1;
-
-		while (I >= 0 && IsWordDiv(strWordDiv,Str[I]))
-		{
-			DistLeft++;
-			I--;
-		}
-
-		if (I < 0)
-			DistLeft=-1;
+		for (L = CurPos - 1; (L >= 0 && IsWordDivSTNR(WordDiv0, Str[L])); --L);
 
 		// копаем вправо
-		DistRight=-1;
+		for (R = CurPos + 1; (R < StrSize && IsWordDivSTNR(WordDiv0, Str[R])); ++R);
 
-		while (J < StrSize && IsWordDiv(strWordDiv,Str[J]))
-		{
-			DistRight++;
-			J++;
+		if ( L < 0) {
+			if (R >= StrSize)
+				return nullptr;
+
+			StartWPos = EndWPos = R;
+
+		} else if (R >= StrSize) {
+			if ( L < 0)
+				return nullptr;
+
+			StartWPos = EndWPos = L;
+
+		} else if (CurPos - L > R - CurPos) { // ?? >=
+			EndWPos = StartWPos = R;
+
+		} else {
+			StartWPos = EndWPos = L;
 		}
 
-		if (J >= StrSize)
-			DistRight=-1;
-
-		if (DistLeft > DistRight) // ?? >=
-			EndWPos=StartWPos=J;
-		else
-			EndWPos=StartWPos=I;
-	}
-	else // здесь все оби, т.е. стоим на буковке
-		EndWPos=StartWPos=CurPos;
-
-	if (StartWPos < StrSize)
-	{
-		while (StartWPos >= 0)
-			if (IsWordDiv(strWordDiv,Str[StartWPos]))
-			{
-				StartWPos++;
-				break;
-			}
-			else
-				StartWPos--;
-
-		while (EndWPos < StrSize)
-			if (IsWordDiv(strWordDiv,Str[EndWPos]))
-			{
-				EndWPos--;
-				break;
-			}
-			else
-				EndWPos++;
+	} else {// здесь все оби, т.е. стоим на буковке
+		EndWPos = StartWPos = CurPos;
 	}
 
-	if (StartWPos < 0)
-		StartWPos=0;
+	for ( ; (StartWPos > 0 && !IsWordDivSTNR(WordDiv0, Str[StartWPos - 1])); --StartWPos);
 
-	if (EndWPos >= StrSize)
-		EndWPos=StrSize;
+	for ( ; (EndWPos + 1 < StrSize && !IsWordDivSTNR(WordDiv0, Str[EndWPos + 1])); ++EndWPos);
 
-	*Start=StartWPos;
-	*End=EndWPos;
-	return Str+StartWPos;
+
+	*Start = StartWPos;
+	*End = EndWPos;
+
+	return Str + StartWPos;
 }
 
 
@@ -1361,4 +1338,39 @@ FARString ReplaceBrackets(const FARString& SearchStr,const FARString& ReplaceStr
 	}
 
 	return result;
+}
+
+
+std::string EscapeUnprintable(const std::string &str)
+{
+	std::string out;
+	out.reserve(str.size());
+	for (std::string::const_iterator i = str.begin(); i != str.end(); ++i) {
+		unsigned char c = (unsigned char)*i;
+		if (c <= 0x20 || c > 0x7e || c=='\\') {
+			char buf[32];
+			sprintf(buf, "\\x%02x", c);
+			out+= buf;
+		} else
+			out+= c;
+	}
+	return out;
+}
+
+std::string UnescapeUnprintable(const std::string &str)
+{
+	std::string out;
+	out.reserve(str.size());
+	for (size_t i = 0; i < str.size(); ++i) {
+		char c = str[i];
+		if (c == '\\' && (i + 3) < str.size() && str[i+1] == 'x') {
+			char tmp[4] = {str[i+2], str[i+3]};
+			unsigned int x = 0;
+			sscanf(tmp, "%x", &x);
+			c = (unsigned char)x;
+			i+= 3;
+		}
+		out+= c;
+	}
+	return out;
 }

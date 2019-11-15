@@ -297,7 +297,7 @@ void TreeList::DisplayTree(int Fast)
 
 			if (!J)
 			{
-				DisplayTreeName(L"/",J);
+				DisplayTreeName(strRoot.CPtr(),J);
 			}
 			else
 			{
@@ -305,12 +305,12 @@ void TreeList::DisplayTree(int Fast)
 
 				for (int i=0; i<CurPtr->Depth-1 && WhereX()+3*i<X2-6; i++)
 				{
-					strOutStr+=TreeLineSymbol[CurPtr->Last[i]?0:1];
+					strOutStr+=TreeLineSymbol[CurPtr->Last[i] ? 0 : 1];
 				}
 
-				strOutStr+=TreeLineSymbol[CurPtr->Last[CurPtr->Depth-1]?2:3];
+				strOutStr+=TreeLineSymbol[CurPtr->Last[CurPtr->Depth-1] ? 2 : 3];
 				BoxText(strOutStr);
-				const wchar_t *ChPtr=LastSlash(CurPtr->strName);
+				const wchar_t *ChPtr = LastSlash(CurPtr->strName);
 
 				if (ChPtr)
 					DisplayTreeName(ChPtr+1,J);
@@ -471,7 +471,7 @@ int TreeList::ReadTree()
 	int FirstCall=TRUE, AscAbort=FALSE;
 	TreeStartTime = GetProcessUptimeMSec();
 	RefreshFrameManager frref(ScrX,ScrY,TreeStartTime,FALSE);//DontRedrawFrame);
-	ScTree.SetFindPath(strRoot, L"*", 0);
+	ScTree.SetFindPath(strRoot, L"*", FSCANTREE_NOFILES | FSCANTREE_NODEVICES);
 	LastScrX = ScrX;
 	LastScrY = ScrY;
 	wakeful W;
@@ -661,7 +661,7 @@ void TreeList::GetRoot()
 	FARString strPanelDir;
 	Panel *RootPanel=GetRootPanel();
 	RootPanel->GetCurDir(strPanelDir);
-	strRoot = ExtractPathRoot(strPanelDir);
+	strRoot = strPanelDir;//ExtractPathRoot(strPanelDir);
 }
 
 
@@ -750,47 +750,54 @@ int TreeList::MsgReadTree(int TreeCount,int &FirstCall)
 
 bool TreeList::FillLastData()
 {
-	int Last,PathLength,SubDirPos,I,J;
-	size_t Pos,Depth;
-	size_t RootLength = strRoot.IsEmpty()?0:strRoot.GetLength()-1;
+	const size_t RootLength = 
+		strRoot.IsEmpty() ? 0 : strRoot.GetLength() - 1;
 
-	for (I=1; I<TreeCount; I++)
+	for (int I = 1; I < TreeCount; I++)
 	{
+		int PathLength;
+		size_t Pos, Depth ;
+		
 		if (ListData[I]->strName.RPos(Pos,GOOD_SLASH))
-			PathLength=(int)Pos+1;
+			PathLength = (int)Pos+1;
 		else
-			PathLength=0;
+			PathLength = 0;
 
-		Depth=ListData[I]->Depth=CountSlash(ListData[I]->strName.CPtr()+RootLength);
+		ListData[I]->Depth = Depth = 
+			CountSlash(ListData[I]->strName.CPtr()+RootLength);
 
 		if (!Depth)
 			return false;
 
-		for (J=I+1,SubDirPos=I,Last=1; J<TreeCount; J++)
+		bool Last;
+		int J, SubDirPos;
+		for (J = I + 1, SubDirPos = I, Last = true; J < TreeCount; J++)
 		{
 			if (CountSlash(ListData[J]->strName.CPtr()+RootLength)>Depth)
 			{
-				SubDirPos=J;
+				SubDirPos = J;
 				continue;
 			}
 			else
 			{
-				if (!StrCmpNI(ListData[I]->strName,ListData[J]->strName,PathLength))
-					Last=0;
+				if (!StrCmpNI(ListData[I]->strName, ListData[J]->strName, PathLength))
+					Last = false;
 
 				break;
 			}
 		}
 
-		for (J=I; J<=SubDirPos; J++)
+		for (int J = I; J <= SubDirPos; J++)
 		{
-			if (Depth>ListData[J]->LastCount)
-			{
-				ListData[J]->LastCount<<=1;
-				ListData[J]->Last=static_cast<int*>(xf_realloc(ListData[J]->Last,ListData[J]->LastCount*sizeof(int)));
-			}
+			TreeItem::LastT &JLast = ListData[J]->Last;
+			if (Depth == JLast.size()) {
+				JLast.push_back(Depth);
+			} else {
+				if (Depth > JLast.size())
+					JLast.resize(Depth);
 
-			ListData[J]->Last[Depth-1]=Last;
+				JLast[Depth - 1] = Last;
+			}
 		}
 	}
 
@@ -1799,7 +1806,7 @@ void TreeList::ReadCache(const wchar_t *TreeRoot)
 		}
 
 	TreeCache.strTreeName = strTreeName;
-	wchar_t *DirName=new wchar_t[NT_MAX_PATH];
+	wchar_t *DirName=new(std::nothrow) wchar_t[NT_MAX_PATH];
 
 	if (DirName)
 	{
@@ -1955,7 +1962,7 @@ int TreeCmp(const wchar_t *Str1, const wchar_t *Str2, int Numeric, int CaseSensi
 	static CMPFUNC funcs[2][2] = { {StrCmpNN, StrCmpNNI}, {NumStrCmpN, NumStrCmpNI} };
 	CMPFUNC cmpfunc = funcs[Numeric?1:0][CaseSensitive?0:1];
 
-	if (*Str1 == GOOD_SLASH && *Str1 == *Str2)
+	if (*Str1 == GOOD_SLASH && *Str2 == GOOD_SLASH)
 	{
 		Str1++;
 		Str2++;
@@ -2083,7 +2090,7 @@ void TreeList::SetTitle()
 	{
 		FARString strTitleDir(L"{");
 
-		const wchar_t *Ptr=ListData?ListData[CurFile]->strName:L"";
+		const wchar_t *Ptr = ListData ? ListData[CurFile]->strName.CPtr() : L"";
 
 		if (*Ptr)
 		{
@@ -2103,25 +2110,36 @@ void TreeList::SetTitle()
 
 */
 
-// TODO: Файлы "Tree.Far" для локальных дисков должны храниться в "Local AppData\Far"
-// TODO: Файлы "Tree.Far" для сетевых дисков должны храниться в "%HOMEDRIVE%\%HOMEPATH%",
-//                        если эти переменные среды не определены, то "%APPDATA%\Far"
-// хpаним "X.tree" (где 'X'  - буква диска, если не сетевой путь)
-// хpаним "server.share.tree" - для сетевого диска без буквы
+static void MkTreeName(FARString &out, const wchar_t *RootDir, const char *ext)
+{
+	struct stat s = {};
+	int r = sdc_stat(Wide2MB(RootDir).c_str(), &s);
+	if (r == 0) {
+		char tmp[128];
+		sprintf(tmp, "tree/%llx-%llx.%s", 
+			(unsigned long long)s.st_rdev, (unsigned long long)s.st_ino, ext);
+		out = InMyTemp(tmp);
+	} else {
+		std::string tmp = InMyTemp("tree/wtf-");
+		const std::string &RootMB = Wide2MB(RootDir);
+		for (char c : RootMB) {
+			tmp+= (c==GOOD_SLASH) ? '@' : c;
+		}
+		tmp+= '.';
+		tmp+= ext;
+		out = tmp;
+	}
+}
+
 FARString &TreeList::MkTreeFileName(const wchar_t *RootDir,FARString &strDest)
 {
-	strDest = RootDir;
-	AddEndSlash(strDest);
-	strDest += L"tree2.far";
+	MkTreeName(strDest, RootDir, "far");
 	return strDest;
 }
 
-// TODO: этому каталогу (Tree.Cache) место не в FarPath, а в "Local AppData\Far\"
 FARString &TreeList::MkTreeCacheFolderName(const wchar_t *RootDir,FARString &strDest)
 {
-	strDest = RootDir;
-	AddEndSlash(strDest);
-	strDest += L"tree2.cache";
+	MkTreeName(strDest, RootDir, "cache");
 	return strDest;
 }
 
@@ -2185,7 +2203,7 @@ bool TreeList::SaveState()
 
 	if (TreeCount > 0)
 	{
-		SaveListData= new TreeItem[TreeCount];
+		SaveListData = new(std::nothrow) TreeItem[TreeCount];
 
 		if (SaveListData)
 		{

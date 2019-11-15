@@ -64,7 +64,6 @@ typedef unsigned __int64 uint64_t;
 #define _read sdc_read
 #define _lseek sdc_lseek
 #define _chsize sdc_ftruncate
-#define _swab swab
 #define _itoa itoa
 
 #define __cdecl
@@ -82,9 +81,15 @@ typedef unsigned __int64 uint64_t;
 # define st_ctim st_ctimespec
 # define st_atim st_atimespec
 # include <sys/syslimits.h>
-#else
+#elif __FreeBSD__
+# include <sys/syslimits.h>
+#elif defined(__linux__)
 # include <linux/limits.h>
 #endif
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static int _wtoi(const wchar_t *w)
 {
@@ -96,7 +101,8 @@ static int64_t _wtoi64(const wchar_t *w)
 	wchar_t *endptr = 0;
 	return wcstoll(w, &endptr, 10);
 }
-	
+
+#ifndef __CYGWIN__	
 static char * itoa(int i, char *a, int radix)
 {
 	switch (radix) {
@@ -105,6 +111,7 @@ static char * itoa(int i, char *a, int radix)
 	}
 	return a;
 }
+#endif
 
 static char * _i64toa(int64_t i, char *a, int radix)
 {
@@ -225,7 +232,7 @@ typedef uint64_t UINT64, *PUINT64;
 typedef int64_t LONG64, *PLONG64;
 typedef uint64_t ULONG64, *PULONG64;
 
-#if defined(__x86_64__) || defined(__arm64__) || defined(__ppc64__)
+#if defined(__x86_64__) || defined(__arm64__) || defined(__aarch64__) || defined(__ppc64__)
 typedef INT64 INT_PTR;
 typedef UINT64 UINT_PTR;
 typedef DWORD64 DWORD_PTR;
@@ -395,27 +402,37 @@ typedef struct _SYSTEMTIME {
 
 
 typedef struct _WIN32_FIND_DATAA {
-    DWORD dwFileAttributes;
     FILETIME ftCreationTime;
     FILETIME ftLastAccessTime;
     FILETIME ftLastWriteTime;
+    DWORD64 UnixDevice;
+    DWORD64 UnixNode;
+    uid_t UnixOwner;
+    gid_t UnixGroup;
+    DWORD dwFileAttributes;
     DWORD nFileSizeHigh;
     DWORD nFileSizeLow;
     DWORD dwReserved0;
     DWORD dwReserved1;
     DWORD dwUnixMode;
+    DWORD nHardLinks;
     CHAR   cFileName[ MAX_NAME ];
 } WIN32_FIND_DATAA, *PWIN32_FIND_DATAA, *LPWIN32_FIND_DATAA;
 typedef struct _WIN32_FIND_DATAW {
-    DWORD dwFileAttributes;
     FILETIME ftCreationTime;
     FILETIME ftLastAccessTime;
     FILETIME ftLastWriteTime;
+    DWORD64 UnixDevice;
+    DWORD64 UnixNode;
+    uid_t UnixOwner;
+    gid_t UnixGroup;
+    DWORD dwFileAttributes;
     DWORD nFileSizeHigh;
     DWORD nFileSizeLow;
     DWORD dwReserved0;
     DWORD dwReserved1;
     DWORD dwUnixMode;
+    DWORD nHardLinks;
     WCHAR  cFileName[ MAX_NAME ];
 } WIN32_FIND_DATAW, *PWIN32_FIND_DATAW, *LPWIN32_FIND_DATAW, WIN32_FIND_DATA, *PWIN32_FIND_DATA, *LPWIN32_FIND_DATA;
 
@@ -533,6 +550,7 @@ typedef struct _MOUSE_EVENT_RECORD {
 #define WINDOW_BUFFER_SIZE_EVENT 0x0004 // Event contains window change event record
 #define MENU_EVENT 0x0008 // Event contains menu event record
 #define FOCUS_EVENT 0x0010 // event contains focus change
+#define NOOP_EVENT 0x0080 // nothing interesting, typically injected to kick events dispatcher
 
 
 typedef struct _INPUT_RECORD {
@@ -1102,20 +1120,24 @@ typedef void *HKL;
 #define ARRAYSIZE(A) (sizeof(A)/sizeof((A)[0]))
 
 #define REG_NONE                    ( 0 )   // No value type
-#define REG_SZ                      ( 1 )   // Unicode nul terminated string
-#define REG_EXPAND_SZ               ( 2 )   // Unicode nul terminated string
+#define REG_SZ                      ( 1 )   // Wide nul terminated string
+#define REG_EXPAND_SZ               ( 2 )   // Wide nul terminated string
                                             // (with environment variable references)
 #define REG_BINARY                  ( 3 )   // Free form binary
 #define REG_DWORD                   ( 4 )   // 32-bit number
 #define REG_DWORD_LITTLE_ENDIAN     ( 4 )   // 32-bit number (same as REG_DWORD)
 #define REG_DWORD_BIG_ENDIAN        ( 5 )   // 32-bit number
 #define REG_LINK                    ( 6 )   // Symbolic Link (unicode)
-#define REG_MULTI_SZ                ( 7 )   // Multiple Unicode strings
+#define REG_MULTI_SZ                ( 7 )   // Multiple Wide strings
 #define REG_RESOURCE_LIST           ( 8 )   // Resource list in the resource map
 #define REG_FULL_RESOURCE_DESCRIPTOR ( 9 )  // Resource list in the hardware description
 #define REG_RESOURCE_REQUIREMENTS_LIST ( 10 )
 #define REG_QWORD                   ( 11 )  // 64-bit number
 #define REG_QWORD_LITTLE_ENDIAN     ( 11 )  // 64-bit number (same as REG_QWORD)
+
+#define REG_SZ_MB                    ( 101 )   // UTF8 nul terminated string
+#define REG_EXPAND_SZ_MB             ( 102 )   // UTF8 nul terminated string
+#define REG_MULTI_SZ_MB              ( 107 )   // Multiple UTF8 strings
 
 
 #define WAIT_TIMEOUT                     258L    // dderror
@@ -1511,8 +1533,6 @@ typedef BOOL (*WINPORT_HANDLER_ROUTINE)(  DWORD CtrlType );
 typedef WINPORT_HANDLER_ROUTINE PHANDLER_ROUTINE;
 typedef WINPORT_THREAD_START_ROUTINE LPTHREAD_START_ROUTINE, PTHREAD_START_ROUTINE;
 
-#define nullptr NULL
-
 #define STDMETHOD(method)        virtual HRESULT method
 #define STDMETHOD_(type,method)  virtual type method
 #define STDMETHODV(method)       virtual HRESULT method
@@ -1561,3 +1581,5 @@ typedef WINPORT_THREAD_START_ROUTINE LPTHREAD_START_ROUTINE, PTHREAD_START_ROUTI
 # error Cannot define thread_local
 #endif
 
+#define DEVNULL		"/dev/null"
+#define DEVNULLW	L"/dev/null"

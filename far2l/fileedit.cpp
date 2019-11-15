@@ -33,7 +33,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "headers.hpp"
 
-
+#include <limits>
 #include "fileedit.hpp"
 #include "keyboard.hpp"
 #include "codepage.hpp"
@@ -71,6 +71,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "constitle.hpp"
 #include "wakeful.hpp"
 #include "DlgGuid.hpp"
+#include "filelist.hpp"
 
 enum enumOpenEditor
 {
@@ -85,6 +86,22 @@ enum enumOpenEditor
 	ID_OE_CANCEL,
 };
 
+static const wchar_t *EOLName(const wchar_t *eol)
+{
+	if (wcscmp(eol, L"\n") == 0)
+		return L"LF";
+
+	if (wcscmp(eol, L"\r") == 0)
+		return L"CR";
+
+	if (wcscmp(eol, L"\r\n") == 0)
+		return L"CRLF";
+
+	if (wcscmp(eol, L"\r\r\n") == 0)
+		return L"CRRLF";
+
+	return eol;//L"WTF";
+}
 
 LONG_PTR __stdcall hndOpenEditor(
     HANDLE hDlg,
@@ -119,15 +136,15 @@ bool dlgOpenEditor(FARString &strFileName, UINT &codepage)
 	const wchar_t *HistoryName=L"NewEdit";
 	DialogDataEx EditDlgData[]=
 	{
-		DI_DOUBLEBOX,3,1,72,8,0,0,MSG(MEditTitle),
-		DI_TEXT,     5,2, 0,2,0,0,MSG(MEditOpenCreateLabel),
-		DI_EDIT,     5,3,70,3,(DWORD_PTR)HistoryName,DIF_FOCUS|DIF_HISTORY|DIF_EDITEXPAND|DIF_EDITPATH,L"",
-		DI_TEXT,     3,4, 0,4,0,DIF_SEPARATOR,L"",
-		DI_TEXT,     5,5, 0,5,0,0,MSG(MEditCodePage),
-		DI_COMBOBOX,25,5,70,5,0,DIF_DROPDOWNLIST|DIF_LISTWRAPMODE|DIF_LISTAUTOHIGHLIGHT,L"",
-		DI_TEXT,     3,6, 0,6,0,DIF_SEPARATOR,L"",
-		DI_BUTTON,   0,7, 0,7,0,DIF_DEFAULT|DIF_CENTERGROUP,MSG(MOk),
-		DI_BUTTON,   0,7, 0,7,0,DIF_CENTERGROUP,MSG(MCancel),
+		{DI_DOUBLEBOX,3,1,72,8,{},0,MSG(MEditTitle)},
+		{DI_TEXT,     5,2, 0,2,{},0,MSG(MEditOpenCreateLabel)},
+		{DI_EDIT,     5,3,70,3,{(DWORD_PTR)HistoryName},DIF_FOCUS|DIF_HISTORY|DIF_EDITEXPAND|DIF_EDITPATH,L""},
+		{DI_TEXT,     3,4, 0,4,{},DIF_SEPARATOR,L""},
+		{DI_TEXT,     5,5, 0,5,{},0,MSG(MEditCodePage)},
+		{DI_COMBOBOX,25,5,70,5,{},DIF_DROPDOWNLIST|DIF_LISTWRAPMODE|DIF_LISTAUTOHIGHLIGHT,L""},
+		{DI_TEXT,     3,6, 0,6,{},DIF_SEPARATOR,L""},
+		{DI_BUTTON,   0,7, 0,7,{},DIF_DEFAULT|DIF_CENTERGROUP,MSG(MOk)},
+		{DI_BUTTON,   0,7, 0,7,{},DIF_CENTERGROUP,MSG(MCancel)}
 	};
 	MakeDialogItemsEx(EditDlgData,EditDlg);
 	EditDlg[ID_OE_FILENAME].strData = strFileName;
@@ -140,6 +157,7 @@ bool dlgOpenEditor(FARString &strFileName, UINT &codepage)
 	if (Dlg.GetExitCode() == ID_OE_OK)
 	{
 		strFileName = EditDlg[ID_OE_FILENAME].strData;
+		ConvertHomePrefixInPath(strFileName);
 		return true;
 	}
 
@@ -251,22 +269,22 @@ bool dlgSaveFileAs(FARString &strFileName, int &TextFormat, UINT &codepage,bool 
 	const wchar_t *HistoryName=L"NewEdit";
 	DialogDataEx EditDlgData[]=
 	{
-		DI_DOUBLEBOX,3,1,72,15,0,0,MSG(MEditTitle),
-		DI_TEXT,5,2,0,2,0,0,MSG(MEditSaveAs),
-		DI_EDIT,5,3,70,3,(DWORD_PTR)HistoryName,DIF_FOCUS|DIF_HISTORY|DIF_EDITEXPAND|DIF_EDITPATH,L"",
-		DI_TEXT,3,4,0,4,0,DIF_SEPARATOR,L"",
-		DI_TEXT,5,5,0,5,0,0,MSG(MEditCodePage),
-		DI_COMBOBOX,25,5,70,5,0,DIF_DROPDOWNLIST|DIF_LISTWRAPMODE|DIF_LISTAUTOHIGHLIGHT,L"",
-		DI_CHECKBOX,5,6,0,6,AddSignature,DIF_DISABLE,MSG(MEditAddSignature),
-		DI_TEXT,3,7,0,7,0,DIF_SEPARATOR,L"",
-		DI_TEXT,5,8,0,8,0,0,MSG(MEditSaveAsFormatTitle),
-		DI_RADIOBUTTON,5,9,0,9,0,DIF_GROUP,MSG(MEditSaveOriginal),
-		DI_RADIOBUTTON,5,10,0,10,0,0,MSG(MEditSaveDOS),
-		DI_RADIOBUTTON,5,11,0,11,0,0,MSG(MEditSaveUnix),
-		DI_RADIOBUTTON,5,12,0,12,0,0,MSG(MEditSaveMac),
-		DI_TEXT,3,13,0,13,0,DIF_SEPARATOR,L"",
-		DI_BUTTON,0,14,0,14,0,DIF_DEFAULT|DIF_CENTERGROUP,MSG(MOk),
-		DI_BUTTON,0,14,0,14,0,DIF_CENTERGROUP,MSG(MCancel),
+		{DI_DOUBLEBOX,3,1,72,15,{},0,MSG(MEditTitle)},
+		{DI_TEXT,5,2,0,2,{},0,MSG(MEditSaveAs)},
+		{DI_EDIT,5,3,70,3,{(DWORD_PTR)HistoryName},DIF_FOCUS|DIF_HISTORY|DIF_EDITEXPAND|DIF_EDITPATH,L""},
+		{DI_TEXT,3,4,0,4,{},DIF_SEPARATOR,L""},
+		{DI_TEXT,5,5,0,5,{},0,MSG(MEditCodePage)},
+		{DI_COMBOBOX,25,5,70,5,{},DIF_DROPDOWNLIST|DIF_LISTWRAPMODE|DIF_LISTAUTOHIGHLIGHT,L""},
+		{DI_CHECKBOX,5,6,0,6,{AddSignature},DIF_DISABLE,MSG(MEditAddSignature)},
+		{DI_TEXT,3,7,0,7,{},DIF_SEPARATOR,L""},
+		{DI_TEXT,5,8,0,8,{},0,MSG(MEditSaveAsFormatTitle)},
+		{DI_RADIOBUTTON,5,9,0,9,{},DIF_GROUP,MSG(MEditSaveOriginal)},
+		{DI_RADIOBUTTON,5,10,0,10,{},0,MSG(MEditSaveDOS)},
+		{DI_RADIOBUTTON,5,11,0,11,{},0,MSG(MEditSaveUnix)},
+		{DI_RADIOBUTTON,5,12,0,12,{},0,MSG(MEditSaveMac)},
+		{DI_TEXT,3,13,0,13,{},DIF_SEPARATOR,L""},
+		{DI_BUTTON,0,14,0,14,{},DIF_DEFAULT|DIF_CENTERGROUP,MSG(MOk)},
+		{DI_BUTTON,0,14,0,14,{},DIF_CENTERGROUP,MSG(MCancel)}
 	};
 	MakeDialogItemsEx(EditDlgData,EditDlg);
 	EditDlg[ID_SF_FILENAME].strData = (/*Flags.Check(FFILEEDIT_SAVETOSAVEAS)?strFullFileName:strFileName*/strFileName);
@@ -285,6 +303,7 @@ bool dlgSaveFileAs(FARString &strFileName, int &TextFormat, UINT &codepage,bool 
 	if ((Dlg.GetExitCode() == ID_SF_OK) && !EditDlg[ID_SF_FILENAME].strData.IsEmpty())
 	{
 		strFileName = EditDlg[ID_SF_FILENAME].strData;
+		ConvertHomePrefixInPath(strFileName);
 		AddSignature=EditDlg[ID_SF_SIGNATURE].Selected!=0;
 
 		if (EditDlg[ID_SF_DONOTCHANGE].Selected)
@@ -407,7 +426,7 @@ FileEditor::~FileEditor()
 				DeleteFileWithFolder(strFullFileName);
 			else
 			{
-				apiSetFileAttributes(strFullFileName,FILE_ATTRIBUTE_NORMAL);
+				apiMakeWritable(strFullFileName);//apiSetFileAttributes(strFullFileName,FILE_ATTRIBUTE_NORMAL);
 				apiDeleteFile(strFullFileName); //BUGBUG
 			}
 		}
@@ -441,10 +460,10 @@ void FileEditor::Init(
 		private:
 			Editor *editor;
 		public:
-			SmartLock() {editor=nullptr;};
-			~SmartLock() {if (editor) editor->Unlock();};
+			SmartLock() {editor=nullptr;}
+			~SmartLock() {if (editor) editor->Unlock();}
 
-			void Set(Editor *e) {editor=e; editor->Lock();};
+			void Set(Editor *e) {editor=e; editor->Lock();}
 	};
 	SmartLock __smartlock;
 	SysErrorCode=0;
@@ -467,14 +486,12 @@ void FileEditor::Init(
 	m_editor->SetCodePage(m_codepage);
 	*AttrStr=0;
 	CurrentEditor=this;
-	FileAttributes=INVALID_FILE_ATTRIBUTES;
-	FileAttributesModified=false;
 	SetTitle(Title);
 	EditNamesList = nullptr;
 	KeyBarVisible = Opt.EdOpt.ShowKeyBar;
 	TitleBarVisible = Opt.EdOpt.ShowTitleBar;
 	// $ 17.08.2001 KM - Добавлено для поиска по AltF7. При редактировании найденного файла из архива для клавиши F2 сделать вызов ShiftF2.
-	Flags.Change(FFILEEDIT_SAVETOSAVEAS,(BlankFileName?TRUE:FALSE));
+	Flags.Change(FFILEEDIT_SAVETOSAVEAS, (InitFlags&FFILEEDIT_SAVETOSAVEAS) == FFILEEDIT_SAVETOSAVEAS || BlankFileName != 0);
 
 	if (!*Name)
 	{
@@ -844,7 +861,7 @@ int FileEditor::ReProcessKey(int Key,int CalledFromControl)
 		{
 			if (Opt.UsePrintManager && CtrlObject->Plugins.FindPlugin(SYSID_PRINTMANAGER))
 			{
-				CtrlObject->Plugins.CallPlugin(SYSID_PRINTMANAGER,OPEN_EDITOR,0); // printman
+				CtrlObject->Plugins.CallPlugin(SYSID_PRINTMANAGER,OPEN_EDITOR,nullptr); // printman
 				return TRUE;
 			}
 
@@ -1274,23 +1291,17 @@ int FileEditor::ReProcessKey(int Key,int CalledFromControl)
 				return TRUE;
 			}
 			case KEY_F8:
-			{
-				if (!IsFileModified() || IsFixedSingleCharCodePage(m_codepage))
-				{
-					SetCodePage(m_codepage==WINPORT(GetACP)()?WINPORT(GetOEMCP)():WINPORT(GetACP)());
-					Flags.Set(FFILEEDIT_CODEPAGECHANGEDBYUSER);
-					ChangeEditKeyBar();
-				}
-
-				return TRUE;
-			}
 			case KEY_SHIFTF8:
 			{
-				int codepage = SelectCodePage(m_codepage, false, true);
+				int codepage;
+				if (Key==KEY_F8) {
+					codepage = (m_codepage==WINPORT(GetACP)()?WINPORT(GetOEMCP)():WINPORT(GetACP)());
+				} else
+					codepage = SelectCodePage(m_codepage, false, true);
 				if (codepage != -1 && codepage != (int)m_codepage) {
 					const bool need_reload = 0
 //								|| IsFixedSingleCharCodePage(m_codepage) != IsFixedSingleCharCodePage(codepage)
-//								|| (!IsUTF8(m_codepage) &&8IsUTF7(codepage))
+								|| IsUTF8(m_codepage) != IsUTF8(codepage)
 								|| IsUTF7(m_codepage) != IsUTF7(codepage)
 								|| IsUTF16(m_codepage) != IsUTF16(codepage)
 								|| IsUTF32(m_codepage) != IsUTF32(codepage);
@@ -1302,6 +1313,7 @@ int FileEditor::ReProcessKey(int Key,int CalledFromControl)
 							SaveToCache();
 							LoadFile(strLoadedFileName, UserBreak);
 						}
+						ChangeEditKeyBar();
 					} else
 						Message(0, 1, MSG(MEditTitle), L"Save file before changing this codepage", MSG(MHOk), nullptr);
 				}
@@ -1666,9 +1678,23 @@ int FileEditor::SaveFile(const wchar_t *Name,int Ask, bool bSaveAs, int TextForm
 	}
 
 	int NewFile=TRUE;
-	FileAttributesModified=false;
 
-	if ((FileAttributes=apiGetFileAttributes(Name))!=INVALID_FILE_ATTRIBUTES)
+	FileUnmakeWritable = apiMakeWritable(Name);
+	if (FileUnmakeWritable.get())
+	{
+			//BUGBUG
+		int AskOverwrite=Message(MSG_WARNING,2,MSG(MEditTitle),Name,MSG(MEditRO),
+		                         MSG(MEditOvr),MSG(MYes),MSG(MNo));
+
+		if (AskOverwrite) {
+			FileUnmakeWritable->Unmake();
+			FileUnmakeWritable.reset();
+			return SAVEFILE_CANCEL;
+		}
+	}
+
+	DWORD FileAttributes=EditorGetFileAttributes(Name);
+	if (FileAttributes!=INVALID_FILE_ATTRIBUTES)
 	{
 		// Проверка времени модификации...
 		if (!Flags.Check(FFILEEDIT_SAVEWQUESTIONS))
@@ -1706,25 +1732,6 @@ int FileEditor::SaveFile(const wchar_t *Name,int Ask, bool bSaveAs, int TextForm
 
 		Flags.Clear(FFILEEDIT_SAVEWQUESTIONS);
 		NewFile=FALSE;
-
-		if (FileAttributes & FILE_ATTRIBUTE_READONLY)
-		{
-			//BUGBUG
-			int AskOverwrite=Message(MSG_WARNING,2,MSG(MEditTitle),Name,MSG(MEditRO),
-			                         MSG(MEditOvr),MSG(MYes),MSG(MNo));
-
-			if (AskOverwrite)
-				return SAVEFILE_CANCEL;
-
-			apiSetFileAttributes(Name,FileAttributes & ~FILE_ATTRIBUTE_READONLY); // сняты атрибуты
-			FileAttributesModified=true;
-		}
-
-		if (FileAttributes & (FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM))
-		{
-			apiSetFileAttributes(Name,FILE_ATTRIBUTE_NORMAL);
-			FileAttributesModified=true;
-		}
 	}
 	else
 	{
@@ -2043,11 +2050,17 @@ int FileEditor::SaveFile(const wchar_t *Name,int Ask, bool bSaveAs, int TextForm
 		}
 	}
 
+	if (SaveObserver && RetCode != SAVEFILE_ERROR) {
+		SaveObserver->OnEditedFileSaved(Name);
+	}
+
 end:
 
-	if (FileAttributes!=INVALID_FILE_ATTRIBUTES && FileAttributesModified)
+	if (FileUnmakeWritable)
 	{
-		apiSetFileAttributes(Name,FileAttributes|FILE_ATTRIBUTE_ARCHIVE);
+		FileUnmakeWritable->Unmake();
+		FileUnmakeWritable.reset();
+//		apiSetFileAttributes(Name,FileAttributes|FILE_ATTRIBUTE_ARCHIVE);
 	}
 
 	apiGetFindDataEx(Name, FileInfo);
@@ -2285,6 +2298,7 @@ void FileEditor::ShowStatus()
 	(m_editor->Flags.Check(FEDITOR_MODIFIED) ? L'*':L' ')<<
 	(m_editor->Flags.Check(FEDITOR_LOCKMODE) ? L'-':L' ')<<
 	(m_editor->Flags.Check(FEDITOR_PROCESSCTRLQ) ? L'"':L' ')<<
+	fmt::Width(5)<<EOLName(m_editor->GlobalEOL)<<L' '<<
 	fmt::Width(5)<<m_codepage<<L' '<<fmt::Width(7)<<MSG(MEditStatusLine)<<L' '<<
 	fmt::Width(SizeLineStr)<<fmt::Precision(SizeLineStr)<<strLineStr<<L' '<<
 	fmt::Width(5)<<MSG(MEditStatusCol)<<L' '<<
@@ -2339,7 +2353,7 @@ void FileEditor::ShowStatus()
 DWORD FileEditor::EditorGetFileAttributes(const wchar_t *Name)
 {
 	SudoClientRegion sdc_rgn;
-	FileAttributes=apiGetFileAttributes(Name);
+	DWORD FileAttributes=apiGetFileAttributes(Name);
 	int ind=0;
 
 	if (FileAttributes!=INVALID_FILE_ATTRIBUTES)
@@ -2350,7 +2364,6 @@ DWORD FileEditor::EditorGetFileAttributes(const wchar_t *Name)
 
 		if (FileAttributes&FILE_ATTRIBUTE_HIDDEN) AttrStr[ind++]=L'H';
 	}
-
 	AttrStr[ind]=0;
 	return FileAttributes;
 }
@@ -2760,7 +2773,7 @@ bool FileEditor::LoadFromCache(EditorCacheParams *pp)
 		strCacheName+=strFullFileName;
 	}
 
-	PosCache PosCache={0};
+	PosCache PosCache{};
 
 	if (Opt.EdOpt.SaveShortPos)
 	{
@@ -2781,13 +2794,13 @@ bool FileEditor::LoadFromCache(EditorCacheParams *pp)
 		pp->LeftPos=static_cast<int>(PosCache.Param[3]);
 		pp->CodePage=static_cast<UINT>(PosCache.Param[4]);
 
-		if ((int)pp->Line < 0) pp->Line=0;
+		if (pp->Line < 0) pp->Line=0;
 
-		if ((int)pp->ScreenLine < 0) pp->ScreenLine=0;
+		if (pp->ScreenLine < 0) pp->ScreenLine=0;
 
-		if ((int)pp->LinePos < 0) pp->LinePos=0;
+		if (pp->LinePos < 0) pp->LinePos=0;
 
-		if ((int)pp->LeftPos < 0) pp->LeftPos=0;
+		if (pp->LeftPos < 0) pp->LeftPos=0;
 
 		if ((int)pp->CodePage < 0) pp->CodePage=0;
 
@@ -2805,7 +2818,7 @@ void FileEditor::SaveToCache()
 
 	if (!Flags.Check(FFILEEDIT_OPENFAILED))   //????
 	{
-		PosCache poscache = {0};
+		PosCache poscache{};
 		poscache.Param[0] = cp.Line;
 		poscache.Param[1] = cp.ScreenLine;
 		poscache.Param[2] = cp.LinePos;
@@ -2862,4 +2875,19 @@ bool FileEditor::AskOverwrite(const FARString& FileName)
 	}
 
 	return result;
+}
+
+void ModalEditTempFile(const std::string &pathname, bool scroll_to_end)
+{
+	FileEditor *ShellEditor=new(std::nothrow) FileEditor(StrMB2Wide(pathname).c_str(),
+		CP_UTF8, FFILEEDIT_DISABLEHISTORY | FFILEEDIT_NEW | FFILEEDIT_SAVETOSAVEAS,
+		scroll_to_end ? std::numeric_limits<int>::max() : 0 );
+	unlink(pathname.c_str());
+	if (ShellEditor) {
+		DWORD editorExitCode = ShellEditor->GetExitCode();
+		if (editorExitCode != XC_LOADING_INTERRUPTED && editorExitCode != XC_OPEN_ERROR) {
+			FrameManager->ExecuteModal();
+		} else
+			delete ShellEditor;
+	}
 }

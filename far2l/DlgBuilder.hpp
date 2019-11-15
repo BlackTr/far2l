@@ -398,6 +398,28 @@ class DialogBuilderBase
 			return Item;
 		}
 
+		// Добавляет указанную текстовую строку справа от элемента RelativeTo.
+		T *AddCheckboxAfter(T *RelativeTo, int TextMessageId, BOOL *Value, int Mask=0)
+		{
+			T *Item = AddDialogItem(DI_CHECKBOX, GetLangString(TextMessageId));
+			Item->X2 = Item->X1 + ItemWidth(*Item);
+			
+			Item->Y1 = Item->Y2 = RelativeTo->Y1;
+			Item->X1 = RelativeTo->X2 + 2;
+			if (!Mask)
+				Item->Selected = *Value;
+			else
+				Item->Selected = (*Value & Mask) ;
+			SetLastItemBinding(CreateCheckBoxBinding(Value, Mask));
+
+			DialogItemBinding<T> *Binding = FindBinding(RelativeTo);
+			if (Binding)
+				Binding->AfterLabelID = GetItemID(Item);
+
+			return Item;
+		}
+
+
 		// Добавляет группу радиокнопок.
 		void AddRadioButtons(int *Value, int OptionCount, int MessageIDs[])
 		{
@@ -493,6 +515,22 @@ class DialogBuilderBase
 			NextY++;
 		}
 
+		// Добавляет кнопку
+		T *AddButton(int MessageId, int &id, T *After = nullptr)
+		{
+			T *Button = AddDialogItem(DI_BUTTON, GetLangString(MessageId));
+			if (After) {
+				Button->X1 = After->X2 + 2;
+				Button->Y1 = Button->Y2 = NextY - 1;
+			} else {
+				SetNextY(Button);
+			}
+			Button->X2 = Button->X1 + 20;//TODO: FIXME: ItemWidth(*Button);
+			
+			id = DialogItemsCount - 1;
+			return Button;
+		}
+
 		// Добавляет сепаратор.
 		void AddSeparator(int MessageId=-1)
 		{
@@ -518,11 +556,13 @@ class DialogBuilderBase
 			CancelButton->Y1 = CancelButton->Y2 = OKButton->Y1;
 		}
 
-		bool ShowDialog()
+		bool ShowDialog(int *id = nullptr)
 		{
 			UpdateBorderSize();
 			UpdateSecondColumnPosition();
 			int Result = DoShowDialog();
+			if (id)
+				*id = Result;
 			if (Result == OKButtonID)
 			{
 				SaveValues();

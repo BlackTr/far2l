@@ -31,8 +31,9 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "headers.hpp"
+#include <errno.h>
 
+#include "headers.hpp"
 
 #include "filelist.hpp"
 #include "colors.hpp"
@@ -566,6 +567,26 @@ void FileList::ShowTotalSize(OpenPluginInfo &Info)
 
 int FileList::ConvertName(const wchar_t *SrcName,FARString &strDest,int MaxLength,int RightAlign,int ShowStatus,DWORD FileAttr)
 {
+	if (ShowStatus && PanelMode==NORMAL_PANEL && (FileAttr&FILE_ATTRIBUTE_REPARSE_POINT) != 0 
+			&& !strCurDir.IsEmpty() && strCurDir[0] == GOOD_SLASH) {
+		
+		FARString strTemp;
+		if (MixToFullPath(SrcName, strTemp, strCurDir) ) {
+			char LinkDest[MAX_PATH + 1] = {0};
+			ssize_t r = sdc_readlink(strTemp.GetMB().c_str(), LinkDest, ARRAYSIZE(LinkDest) - 1);
+			if (r > 0 && r < (ssize_t)ARRAYSIZE(LinkDest) ) {
+				LinkDest[r] = 0;
+				strTemp = SrcName;
+				strTemp+= L" ->";
+				strTemp+= LinkDest;
+				return ConvertName(strTemp, strDest, MaxLength, RightAlign, 
+					ShowStatus, FileAttr & (~(DWORD)FILE_ATTRIBUTE_REPARSE_POINT));
+			} else {
+				fprintf(stderr, "sdc_readlink errno %u\n", errno);
+			}
+		}
+	}
+
 	wchar_t *lpwszDest = strDest.GetBuffer(MaxLength+1);
 	wmemset(lpwszDest,L' ',MaxLength);
 	int SrcLength=StrLength(SrcName);
@@ -604,6 +625,7 @@ int FileList::ConvertName(const wchar_t *SrcName,FARString &strDest,int MaxLengt
 	}
 
 	strDest.ReleaseBuffer(MaxLength);
+	
 	return(SrcLength>MaxLength);
 }
 
@@ -983,7 +1005,7 @@ void FileList::ShowList(int ShowStatus,int StartColumn)
 							if (ListData[ListPos]->Colors.MarkChar && Opt.Highlight && Width>1)
 							{
 								Width--;
-								OutCharacter[0]=(wchar_t)ListData[ListPos]->Colors.MarkChar;
+								OutCharacter[0]=(wchar_t)(ListData[ListPos]->Colors.MarkChar & 0xffff);
 								int OldColor=GetColor();
 
 								if (!ShowStatus)
@@ -1050,7 +1072,6 @@ void FileList::ShowList(int ShowStatus,int StartColumn)
 
 							FARString strName;
 							int TooLong=ConvertName(NamePtr, strName, Width, RightAlign,ShowStatus,ListData[ListPos]->FileAttr);
-
 							if (CurLeftPos)
 								LeftBracket=TRUE;
 
@@ -1206,7 +1227,7 @@ void FileList::ShowList(int ShowStatus,int StartColumn)
 								if (SlashPos)
 									Owner=SlashPos+1;
 							}
-							else if(IsSlash(*Owner))
+							else if(Owner && IsSlash(*Owner))
 							{
 								Owner++;
 							}

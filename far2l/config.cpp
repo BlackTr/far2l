@@ -56,6 +56,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "message.hpp"
 #include "stddlg.hpp"
 #include "pathmix.hpp"
+#include "dirmix.hpp"
 #include "panelmix.hpp"
 #include "strmix.hpp"
 #include "udlist.hpp"
@@ -84,6 +85,7 @@ const wchar_t NKeyInterfaceCompletion[]=L"Interface/Completion";
 const wchar_t NKeyViewer[]=L"Viewer";
 const wchar_t NKeyDialog[]=L"Dialog";
 const wchar_t NKeyEditor[]=L"Editor";
+const wchar_t NKeyNotifications[]=L"Notifications";
 const wchar_t NKeyXLat[]=L"XLat";
 const wchar_t NKeySystem[]=L"System";
 const wchar_t NKeySystemExecutor[]=L"System/Executor";
@@ -113,13 +115,23 @@ const wchar_t NKeyVMenu[]=L"VMenu";
 
 const wchar_t *constBatchExt=L".BAT;.CMD;";
 
+static DWORD ApplyConsoleTweaks()
+{
+	DWORD tweaks = 0;
+	if (Opt.ExclusiveCtrlLeft) tweaks|= EXCLUSIVE_CTRL_LEFT;
+	if (Opt.ExclusiveCtrlRight) tweaks|= EXCLUSIVE_CTRL_RIGHT;
+	if (Opt.ExclusiveAltLeft) tweaks|= EXCLUSIVE_ALT_LEFT;
+	if (Opt.ExclusiveAltRight) tweaks|= EXCLUSIVE_ALT_RIGHT;
+	if (Opt.ExclusiveWinLeft) tweaks|= EXCLUSIVE_WIN_LEFT;
+	if (Opt.ExclusiveWinRight) tweaks|= EXCLUSIVE_WIN_RIGHT;
+	if (Opt.ConsolePaintSharp) tweaks|= CONSOLE_PAINT_SHARP;
+	return WINPORT(SetConsoleTweaks)(tweaks);
+}
+
 static void ApplySudoConfiguration()
 {
- 	std::string sudo_app = g_strFarPath.GetMB(); 
-	std::string askpass_app = g_strFarPath.GetMB(); 
-	
-	sudo_app+= "/far2l_sudoapp";
-	askpass_app+= "/far2l_askpass";
+ 	const std::string &sudo_app = GetHelperPathName("far2l_sudoapp");
+	const std::string &askpass_app = GetHelperPathName("far2l_askpass");
 
 	SudoClientMode mode;
 	if (Opt.SudoEnabled) {
@@ -156,8 +168,8 @@ void SystemSettings()
 
 //	Builder.AddCheckbox(MSudoParanoic, &Opt.SudoParanoic);
 //	Builder.AddCheckbox(CopyWriteThrough, &Opt.CMOpt.WriteThrough);
-	Builder.AddCheckbox(MConfigCopySharing, &Opt.CMOpt.CopyOpened);
 	Builder.AddCheckbox(MConfigScanJunction, &Opt.ScanJunction);
+	Builder.AddCheckbox(MConfigOnlyFilesSize, &Opt.OnlyFilesSize);
 
 	DialogItemEx *InactivityExit = Builder.AddCheckbox(MConfigInactivity, &Opt.InactivityExit);
 	DialogItemEx *InactivityExitTime = Builder.AddIntEditField(&Opt.InactivityExitTime, 2);
@@ -168,9 +180,6 @@ void SystemSettings()
 	Builder.AddCheckbox(MConfigSaveHistory, &Opt.SaveHistory);
 	Builder.AddCheckbox(MConfigSaveFoldersHistory, &Opt.SaveFoldersHistory);
 	Builder.AddCheckbox(MConfigSaveViewHistory, &Opt.SaveViewHistory);
-	Builder.AddCheckbox(MConfigRegisteredTypes, &Opt.UseRegisteredTypes);
-	Builder.AddCheckbox(MConfigCloseCDGate, &Opt.CloseCDGate);
-	Builder.AddCheckbox(MConfigUpdateEnvironment, &Opt.UpdateEnvironment);
 
 	Builder.AddCheckbox(MConfigAutoSave, &Opt.AutoSaveSetup);
 	Builder.AddOKCancel();
@@ -229,40 +238,79 @@ void PanelSettings()
 */
 void InterfaceSettings()
 {
-	DialogBuilder Builder(MConfigInterfaceTitle, L"InterfSettings");
-
-	Builder.AddCheckbox(MConfigClock, &Opt.Clock);
-	Builder.AddCheckbox(MConfigViewerEditorClock, &Opt.ViewerEditorClock);
-	Builder.AddCheckbox(MConfigMouse, &Opt.Mouse);
-	Builder.AddCheckbox(MConfigKeyBar, &Opt.ShowKeyBar);
-	Builder.AddCheckbox(MConfigMenuBar, &Opt.ShowMenuBar);
-	DialogItemEx *SaverCheckbox = Builder.AddCheckbox(MConfigSaver, &Opt.ScreenSaver);
-
-	DialogItemEx *SaverEdit = Builder.AddIntEditField(&Opt.ScreenSaverTime, 2);
-	SaverEdit->Indent(4);
-	Builder.AddTextAfter(SaverEdit, MConfigSaverMinutes);
-	Builder.LinkFlags(SaverCheckbox, SaverEdit, DIF_DISABLE);
-
-	Builder.AddCheckbox(MConfigCopyTotal, &Opt.CMOpt.CopyShowTotal);
-	Builder.AddCheckbox(MConfigCopyTimeRule, &Opt.CMOpt.CopyTimeRule);
-	Builder.AddCheckbox(MConfigDeleteTotal, &Opt.DelOpt.DelShowTotal);
-	Builder.AddCheckbox(MConfigPgUpChangeDisk, &Opt.PgUpChangeDisk);
-	Builder.AddCheckbox(MConfigClearType, &Opt.ClearType);
-	Builder.AddText(MConfigTitleAddons);
-	Builder.AddEditField(&Opt.strTitleAddons, 47);
-	Builder.AddOKCancel();
-
-	if (Builder.ShowDialog())
-	{
-		if (Opt.CMOpt.CopyTimeRule)
-			Opt.CMOpt.CopyTimeRule = 3;
-
-		SetFarConsoleMode();
-		CtrlObject->Cp()->LeftPanel->Update(UPDATE_KEEP_SELECTION);
-		CtrlObject->Cp()->RightPanel->Update(UPDATE_KEEP_SELECTION);
-		CtrlObject->Cp()->SetScreenPosition();
-		// $ 10.07.2001 SKV ! надо это делать, иначе если кейбар спрятали, будет полный рамс.
-		CtrlObject->Cp()->Redraw();
+	for (;;) {
+		DialogBuilder Builder(MConfigInterfaceTitle, L"InterfSettings");
+		
+		Builder.AddCheckbox(MConfigClock, &Opt.Clock);
+		Builder.AddCheckbox(MConfigViewerEditorClock, &Opt.ViewerEditorClock);
+		Builder.AddCheckbox(MConfigMouse, &Opt.Mouse);
+		Builder.AddCheckbox(MConfigKeyBar, &Opt.ShowKeyBar);
+		Builder.AddCheckbox(MConfigMenuBar, &Opt.ShowMenuBar);
+		DialogItemEx *SaverCheckbox = Builder.AddCheckbox(MConfigSaver, &Opt.ScreenSaver);
+		
+		DialogItemEx *SaverEdit = Builder.AddIntEditField(&Opt.ScreenSaverTime, 2);
+		SaverEdit->Indent(4);
+		Builder.AddTextAfter(SaverEdit, MConfigSaverMinutes);
+		Builder.LinkFlags(SaverCheckbox, SaverEdit, DIF_DISABLE);
+		
+		Builder.AddCheckbox(MConfigCopyTotal, &Opt.CMOpt.CopyShowTotal);
+		Builder.AddCheckbox(MConfigCopyTimeRule, &Opt.CMOpt.CopyTimeRule);
+		Builder.AddCheckbox(MConfigDeleteTotal, &Opt.DelOpt.DelShowTotal);
+		Builder.AddCheckbox(MConfigPgUpChangeDisk, &Opt.PgUpChangeDisk);
+		
+		
+		DWORD supported_tweaks = ApplyConsoleTweaks();
+		int ChangeFontID = -1;
+		DialogItemEx *Item = Builder.AddButton(MConfigConsoleChangeFont, ChangeFontID);
+		
+		if (supported_tweaks & TWEAK_STATUS_SUPPORT_PAINT_SHARP) {
+			Builder.AddCheckboxAfter(Item, MConfigConsolePaintSharp, &Opt.ConsolePaintSharp);
+		}
+		if (supported_tweaks & TWEAK_STATUS_SUPPORT_EXCLUSIVE_KEYS) {
+			Builder.AddText(MConfigExclusiveKeys);
+			Item = Builder.AddCheckbox(MConfigExclusiveCtrlLeft, &Opt.ExclusiveCtrlLeft);
+			Item->Indent(4);
+			Builder.AddCheckboxAfter(Item, MConfigExclusiveCtrlRight, &Opt.ExclusiveCtrlRight);
+		
+			Item = Builder.AddCheckbox(MConfigExclusiveAltLeft, &Opt.ExclusiveAltLeft);
+			Item->Indent(4);
+			Builder.AddCheckboxAfter(Item, MConfigExclusiveAltRight, &Opt.ExclusiveAltRight);
+		
+			Item = Builder.AddCheckbox(MConfigExclusiveWinLeft, &Opt.ExclusiveWinLeft);
+			Item->Indent(4);
+			Builder.AddCheckboxAfter(Item, MConfigExclusiveWinRight, &Opt.ExclusiveWinRight);
+		}
+		
+		Builder.AddText(MConfigTitleAddons);
+		Builder.AddEditField(&Opt.strTitleAddons, 47);
+		
+		//OKButton->Flags = DIF_CENTERGROUP;
+		//OKButton->DefaultButton = TRUE;
+		//OKButton->Y1 = OKButton->Y2 = NextY++;
+		//OKButtonID = DialogItemsCount-1;
+		
+		
+		Builder.AddOKCancel();
+		
+		int clicked_id = -1;
+		if (Builder.ShowDialog(&clicked_id)) {
+			if (Opt.CMOpt.CopyTimeRule)
+				Opt.CMOpt.CopyTimeRule = 3;
+		
+			SetFarConsoleMode();
+			CtrlObject->Cp()->LeftPanel->Update(UPDATE_KEEP_SELECTION);
+			CtrlObject->Cp()->RightPanel->Update(UPDATE_KEEP_SELECTION);
+			CtrlObject->Cp()->SetScreenPosition();
+			// $ 10.07.2001 SKV ! надо это делать, иначе если кейбар спрятали, будет полный рамс.
+			CtrlObject->Cp()->Redraw();
+			ApplyConsoleTweaks();
+			break;
+		}
+		
+		if (clicked_id != ChangeFontID)
+			break;
+		
+		WINPORT(ConsoleChangeFont)();
 	}
 }
 
@@ -274,6 +322,10 @@ void AutoCompleteSettings()
 	ModalModeCheck->Indent(4);
 	Builder.AddCheckbox(MConfigAutoCompleteAutoAppend, &Opt.AutoComplete.AppendCompletion);
 	Builder.LinkFlags(ListCheck, ModalModeCheck, DIF_DISABLE);
+
+	Builder.AddText(MConfigAutoCompleteExceptions);
+	Builder.AddEditField(&Opt.AutoComplete.Exceptions, 47);
+	
 	Builder.AddOKCancel();
 	Builder.ShowDialog();
 }
@@ -511,6 +563,22 @@ void EditorConfig(EditorOptions &EdOpt,bool Local)
 }
 
 
+void NotificationsConfig(NotificationsOptions &NotifOpt)
+{
+	DialogBuilder Builder(MNotifConfigTitle, L"NotificationsSettings");
+
+	Builder.AddCheckbox(MNotifConfigOnFileOperation, &NotifOpt.OnFileOperation);
+	Builder.AddCheckbox(MNotifConfigOnConsole, &NotifOpt.OnConsole);
+	Builder.AddEmptyLine();
+	Builder.AddCheckbox(MNotifConfigOnlyIfBackground, &NotifOpt.OnlyIfBackground);
+	Builder.AddOKCancel();
+
+	if (Builder.ShowDialog())
+	{
+	}
+}
+
+
 void SetFolderInfoFiles()
 {
 	FARString strFolderInfoFiles;
@@ -551,7 +619,7 @@ static struct FARConfig
 	{0, REG_DWORD,  NKeyScreen, L"DeltaXY", &Opt.ScrSize.DeltaXY, 0, 0},
 
 	{1, REG_DWORD,  NKeyCmdline, L"UsePromptFormat", &Opt.CmdLine.UsePromptFormat,0, 0},
-	{1, REG_SZ,     NKeyCmdline, L"PromptFormat",&Opt.CmdLine.strPromptFormat, 0, L"$p$g"},
+	{1, REG_SZ,     NKeyCmdline, L"PromptFormat",&Opt.CmdLine.strPromptFormat, 0, L"$p$# "},
 	{1, REG_DWORD,  NKeyCmdline, L"DelRemovesBlocks", &Opt.CmdLine.DelRemovesBlocks,1, 0},
 	{1, REG_DWORD,  NKeyCmdline, L"EditBlock", &Opt.CmdLine.EditBlock,0, 0},
 	{1, REG_DWORD,  NKeyCmdline, L"AutoComplete",&Opt.CmdLine.AutoComplete,1, 0},
@@ -565,15 +633,23 @@ static struct FARConfig
 	{0, REG_DWORD,  NKeyInterface, L"CursorSize3",&Opt.CursorSize[2],99, 0},
 	{0, REG_DWORD,  NKeyInterface, L"CursorSize4",&Opt.CursorSize[3],99, 0},
 	{0, REG_DWORD,  NKeyInterface, L"ShiftsKeyRules",&Opt.ShiftsKeyRules,1, 0},
-	{0, REG_DWORD,  NKeyInterface, L"AltF9",&Opt.AltF9, 1, 0},
 	{1, REG_DWORD,  NKeyInterface, L"CtrlPgUp",&Opt.PgUpChangeDisk, 1, 0},
-	{1, REG_DWORD,  NKeyInterface, L"ClearType",&Opt.ClearType, 0, 0},
+
+	{1, REG_DWORD,  NKeyInterface, L"ConsolePaintSharp",&Opt.ConsolePaintSharp, 0, 0},
+	{1, REG_DWORD,  NKeyInterface, L"ExclusiveCtrlLeft",&Opt.ExclusiveCtrlLeft, 0, 0},
+	{1, REG_DWORD,  NKeyInterface, L"ExclusiveCtrlRight",&Opt.ExclusiveCtrlRight, 0, 0},
+	{1, REG_DWORD,  NKeyInterface, L"ExclusiveAltLeft",&Opt.ExclusiveAltLeft, 0, 0},
+	{1, REG_DWORD,  NKeyInterface, L"ExclusiveAltRight",&Opt.ExclusiveAltRight, 0, 0},
+	{1, REG_DWORD,  NKeyInterface, L"ExclusiveWinLeft",&Opt.ExclusiveWinLeft, 0, 0},
+	{1, REG_DWORD,  NKeyInterface, L"ExclusiveWinRight",&Opt.ExclusiveWinRight, 0, 0},
+
 	{0, REG_DWORD,  NKeyInterface, L"ShowTimeoutDelFiles",&Opt.ShowTimeoutDelFiles, 50, 0},
 	{0, REG_DWORD,  NKeyInterface, L"ShowTimeoutDACLFiles",&Opt.ShowTimeoutDACLFiles, 50, 0},
 	{0, REG_DWORD,  NKeyInterface, L"FormatNumberSeparators",&Opt.FormatNumberSeparators, 0, 0},
 	{1, REG_DWORD,  NKeyInterface, L"CopyShowTotal",&Opt.CMOpt.CopyShowTotal,1, 0},
 	{1, REG_DWORD,  NKeyInterface,L"DelShowTotal",&Opt.DelOpt.DelShowTotal,0, 0},
-	{1, REG_SZ,     NKeyInterface,L"TitleAddons",&Opt.strTitleAddons, 0, L"%Ver.%Build %Platform %Admin"},
+	{1, REG_SZ,     NKeyInterface,L"TitleAddons",&Opt.strTitleAddons, 0, L"%Ver %Build %Platform %User@%Host"},
+	{1, REG_SZ,     NKeyInterfaceCompletion,L"Exceptions",&Opt.AutoComplete.Exceptions, 0, L"git*reset*--hard; ftp://*:*@*"},
 	{1, REG_DWORD,  NKeyInterfaceCompletion,L"ShowList",&Opt.AutoComplete.ShowList, 1, 0},
 	{1, REG_DWORD,  NKeyInterfaceCompletion,L"ModalList",&Opt.AutoComplete.ModalList, 0, 0},
 	{1, REG_DWORD,  NKeyInterfaceCompletion,L"Append",&Opt.AutoComplete.AppendCompletion, 0, 0},
@@ -636,6 +712,10 @@ static struct FARConfig
 	{1, REG_DWORD,  NKeyEditor,L"SearchPickUpWord",&Opt.EdOpt.SearchPickUpWord,0, 0},
 	{1, REG_DWORD,  NKeyEditor,L"ShowWhiteSpace",&Opt.EdOpt.ShowWhiteSpace,0, 0},
 
+	{1, REG_DWORD,  NKeyNotifications,L"OnFileOperation",&Opt.NotifOpt.OnFileOperation,1, 0},
+	{1, REG_DWORD,  NKeyNotifications,L"OnConsole",&Opt.NotifOpt.OnConsole,1, 0},
+	{1, REG_DWORD,  NKeyNotifications,L"OnlyIfBackground",&Opt.NotifOpt.OnlyIfBackground,1, 0},
+
 	{0, REG_DWORD,  NKeyXLat,L"Flags",&Opt.XLat.Flags,(DWORD)XLAT_SWITCHKEYBLAYOUT|XLAT_CONVERTALLCMDLINE, 0},
 	{0, REG_SZ,     NKeyXLat,L"Table1",&Opt.XLat.Table[0],0,L""},
 	{0, REG_SZ,     NKeyXLat,L"Table2",&Opt.XLat.Table[1],0,L""},
@@ -653,7 +733,6 @@ static struct FARConfig
 	{1, REG_DWORD,  NKeySystem,L"SaveFoldersHistory",&Opt.SaveFoldersHistory,1, 0},
 	{0, REG_DWORD,  NKeySystem,L"SavePluginFoldersHistory",&Opt.SavePluginFoldersHistory,0, 0},
 	{1, REG_DWORD,  NKeySystem,L"SaveViewHistory",&Opt.SaveViewHistory,1, 0},
-	{1, REG_DWORD,  NKeySystem,L"UseRegisteredTypes",&Opt.UseRegisteredTypes,1, 0},
 	{1, REG_DWORD,  NKeySystem,L"AutoSaveSetup",&Opt.AutoSaveSetup,0, 0},
 	{1, REG_DWORD,  NKeySystem,L"DeleteToRecycleBin",&Opt.DeleteToRecycleBin,0, 0},
 	{1, REG_DWORD,  NKeySystem,L"DeleteToRecycleBinKillLink",&Opt.DeleteToRecycleBinKillLink,1, 0},
@@ -662,10 +741,9 @@ static struct FARConfig
 	{1, REG_DWORD,  NKeySystem,L"SudoConfirmModify",&Opt.SudoConfirmModify,1, 0},
 	{1, REG_DWORD,  NKeySystem,L"SudoPasswordExpiration",&Opt.SudoPasswordExpiration,15*60, 0},
 
-
 	{1, REG_DWORD,  NKeySystem,L"WriteThrough",&Opt.CMOpt.WriteThrough, 0, 0},
-	{0, REG_DWORD,  NKeySystem,L"CopySecurityOptions",&Opt.CMOpt.CopySecurityOptions,0, 0},
-	{1, REG_DWORD,  NKeySystem,L"CopyOpened",&Opt.CMOpt.CopyOpened,1, 0},
+	{1, REG_DWORD,  NKeySystem,L"CopyXAttr",&Opt.CMOpt.CopyXAttr, 0, 0},
+	{0, REG_DWORD,  NKeySystem,L"CopyAccessMode",&Opt.CMOpt.CopyAccessMode,1, 0},
 	{1, REG_DWORD,  NKeySystem, L"MultiCopy",&Opt.CMOpt.MultiCopy,0, 0},
 	{1, REG_DWORD,  NKeySystem,L"CopyTimeRule",  &Opt.CMOpt.CopyTimeRule, 3, 0},
 
@@ -708,14 +786,12 @@ static struct FARConfig
 	//{0, REG_DWORD,  NKeySystem,L"CPAJHefuayor",&Opt.strCPAJHefuayor,0, 0},
 	{0, REG_DWORD,  NKeySystem,L"CloseConsoleRule",&Opt.CloseConsoleRule,1, 0},
 	{0, REG_DWORD,  NKeySystem,L"PluginMaxReadData",&Opt.PluginMaxReadData,0x20000, 0},
-	{1, REG_DWORD,  NKeySystem,L"CloseCDGate",&Opt.CloseCDGate,1, 0},
-	{1, REG_DWORD,  NKeySystem,L"UpdateEnvironment",&Opt.UpdateEnvironment,0,0},
 	{0, REG_DWORD,  NKeySystem,L"UseNumPad",&Opt.UseNumPad,1, 0},
 	{0, REG_DWORD,  NKeySystem,L"CASRule",&Opt.CASRule,0xFFFFFFFFU, 0},
 	{0, REG_DWORD,  NKeySystem,L"AllCtrlAltShiftRule",&Opt.AllCtrlAltShiftRule,0x0000FFFF, 0},
 	{1, REG_DWORD,  NKeySystem,L"ScanJunction",&Opt.ScanJunction,1, 0},
+	{1, REG_DWORD,  NKeySystem,L"OnlyFilesSize",&Opt.OnlyFilesSize, 0, 0},
 	{0, REG_DWORD,  NKeySystem,L"UsePrintManager",&Opt.UsePrintManager,1, 0},
-	{1, REG_DWORD,  NKeySystem,L"ElevationMode",&Opt.ElevationMode,0x0FFFFFFFU, 0},
 	{0, REG_DWORD,  NKeySystem,L"WindowMode",&Opt.WindowMode, 0, 0},
 
 	{0, REG_DWORD,  NKeySystemNowell,L"MoveRO",&Opt.Nowell.MoveRO,1, 0},
@@ -938,12 +1014,12 @@ void ReadConfig()
 
 	GetRegKey(NKeyKeyMacros,L"KeyRecordCtrlDot",strKeyNameFromReg,szCtrlDot);
 
-	if ((Opt.Macro.KeyMacroCtrlDot=KeyNameToKey(strKeyNameFromReg)) == (DWORD)-1)
+	if ((Opt.Macro.KeyMacroCtrlDot=KeyNameToKey(strKeyNameFromReg)) == KEY_INVALID)
 		Opt.Macro.KeyMacroCtrlDot=KEY_CTRLDOT;
 
 	GetRegKey(NKeyKeyMacros,L"KeyRecordCtrlShiftDot",strKeyNameFromReg,szCtrlShiftDot);
 
-	if ((Opt.Macro.KeyMacroCtrlShiftDot=KeyNameToKey(strKeyNameFromReg)) == (DWORD)-1)
+	if ((Opt.Macro.KeyMacroCtrlShiftDot=KeyNameToKey(strKeyNameFromReg)) == KEY_INVALID)
 		Opt.Macro.KeyMacroCtrlShiftDot=KEY_CTRLSHIFTDOT;
 
 	Opt.EdOpt.strWordDiv = Opt.strWordDiv;
@@ -1005,6 +1081,7 @@ void ReadConfig()
 	}
 
 	ApplySudoConfiguration();
+	ApplyConsoleTweaks();
 	/* *************************************************** </ПОСТПРОЦЕССЫ> */
 }
 

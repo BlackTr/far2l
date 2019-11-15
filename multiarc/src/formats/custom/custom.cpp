@@ -16,6 +16,9 @@
 #include <sys/wait.h>
 #include <pluginold.hpp>
 #include <KeyFileHelper.h>
+#include <utils.h>
+#include <string>
+#include <list>
 using namespace oldfar;
 #include "fmt.hpp"
 #include <errno.h>
@@ -59,11 +62,13 @@ typedef union {
 ///////////////////////////////////////////////////////////////////////////////
 // Forward declarations
 
-BOOL WINAPI OpenArchivePipe(const char *Name, int *Type);
 int GetString(char *Str, int MaxSize);
 int HexCharToNum(int HexChar);
-int GetSectionName(int Num, char *Name, int MaxSize);
 
+bool GetSectionName(int Num, std::string &Name);
+bool GetSectionName(int Num, char *Name, int MaxSize);
+
+void GetIniString(LPCSTR lpAppName,LPCSTR lpKeyName,LPCSTR lpDefault, std::string &out);
 DWORD GetIniString(LPCSTR lpAppName,LPCSTR lpKeyName,LPCSTR lpDefault,LPSTR lpReturnedString,DWORD nSize);
 UINT GetIniInt(LPCSTR lpAppName,LPCSTR lpKeyName,INT lpDefault);
 
@@ -314,14 +319,13 @@ class MetaReplacer
 ///////////////////////////////////////////////////////////////////////////////
 // Variables
 
-int     CurType;
-char    *OutData;
-DWORD   OutDataPos, OutDataSize;
+int     CurType = 0;
+char    *OutData = nullptr;
+DWORD   OutDataPos = 0, OutDataSize = 0;
 
-char    FormatFileName[NM],UserFormatFileName[NM];
+static std::list<std::string> FormatFileNames;
 
-
-char    StartText[PROF_STR_LEN], EndText[PROF_STR_LEN];
+static std::string StartText, EndText;
 
 CustomStringList *Format = 0;
 CustomStringList *IgnoreStrings = 0;
@@ -346,38 +350,62 @@ void WINAPI _export CUSTOM_SetFarInfo(const struct PluginStartupInfo *Info)
     MkTemp = Info->FSF->MkTemp;
 }
 
-DWORD WINAPI _export CUSTOM_LoadFormatModule(const char *ModuleName)
+static bool HasCustomIni()
 {
-    strcpy(FormatFileName, ModuleName);
-    strcpy(strrchr(FormatFileName, '/') + 1, "custom.ini");
-    strcpy(UserFormatFileName,FormatFileName);
-    strcpy(strrchr(UserFormatFileName,'.'),"_user.ini");
-    return (0);
+	struct stat s;
+	for (const auto &n : FormatFileNames) {
+		if (stat(n.c_str(), &s) == 0)
+			return true;
+	}
+		
+	return false;
 }
 
-BOOL WINAPI _export CUSTOM_IsArchive(const char *Name, const unsigned char *Data, int DataSize)
+DWORD WINAPI _export CUSTOM_LoadFormatModule(const char *ModuleName)
 {
-    char *Dot = strrchr((char *) Name, '.');
+	std::string s = ModuleName;
+	size_t p = s.rfind(GOOD_SLASH);
+	if (p != std::string::npos) {
+		s.resize(p + 1);
+		s+= "custom.ini";
+		FormatFileNames.emplace_back(s);
 
+		if (TranslateInstallPath_Lib2Share(s)) {
+			FormatFileNames.emplace_back(s);
+		}
+	}
+
+	FormatFileNames.emplace_back(InMyConfig("multiarc/custom.ini", false));
+	return (0);
+}
+
+BOOL WINAPI _export CUSTOM_IsArchive(const char *FName, const unsigned char *Data, int DataSize)
+{
+	if (!HasCustomIni())//just for optimization
+		return FALSE;
+		
+    char *Dot = strrchr((char *) FName, '.');
+
+	std::string TypeName, Name, Ext, ID;
     for(int I = 0;; I++)
     {
-        char TypeName[NM], Name[NM], Ext[NM], ID[512];
         int IDPos;
 
-        if(!GetSectionName(I, TypeName, sizeof(TypeName)))
+        if(!GetSectionName(I, TypeName))
             break;
 
-        GetIniString(TypeName, Str_TypeName, TypeName, Name, sizeof(Name));
+        GetIniString(TypeName.c_str(), Str_TypeName, TypeName.c_str(), Name);
 
-        if(*Name == 0)
+        if (Name.empty())
             break;
 
-        GetIniString(TypeName, "ID", "", ID, sizeof(ID));
-        IDPos = GetIniInt(TypeName, "IDPos", -1);
+        GetIniString(TypeName.c_str(), "ID", "", ID);
+        IDPos = GetIniInt(TypeName.c_str(), "IDPos", -1);
 
-        if(*ID)
+        if (!ID.empty())
         {
-            unsigned char IDData[256], *CurID = (unsigned char *) &ID[0];
+            unsigned char IDData[256];
+			const unsigned char *CurID = (const unsigned char *) ID.c_str();
             int IDLength = 0;
 
             while(1)
@@ -406,7 +434,7 @@ BOOL WINAPI _export CUSTOM_IsArchive(const char *Name, const unsigned char *Data
             }
             if(Found)
             {
-                if(GetIniInt(TypeName, "IDOnly", 0))
+                if(GetIniInt(TypeName.c_str(), "IDOnly", 0))
                 {
                     CurType = I;
                     return (TRUE);
@@ -416,9 +444,9 @@ BOOL WINAPI _export CUSTOM_IsArchive(const char *Name, const unsigned char *Data
                 continue;
         }
 
-        GetIniString(TypeName, "Extension", "", Ext, sizeof(Ext));
+        GetIniString(TypeName.c_str(), "Extension", "", Ext);
 
-        if(Dot != NULL && *Ext != 0 && strcasecmp(Dot + 1, Ext) == 0)
+        if(Dot != NULL && !Ext.empty() && strcasecmp(Dot + 1, Ext.c_str()) == 0)
         {
             CurType = I;
             return (TRUE);
@@ -435,17 +463,18 @@ DWORD WINAPI _export CUSTOM_GetSFXPos(void)
 
 BOOL WINAPI _export CUSTOM_OpenArchive(const char *Name, int *Type)
 {
-    char TypeName[NM], Command[512];
+	std::string TypeName;
+    char Command[512] = {};
 
-    if(!GetSectionName(CurType, TypeName, sizeof(TypeName)))
+    if(!GetSectionName(CurType, TypeName))
         return (FALSE);
 
-    GetIniString(TypeName, "List", "", Command, sizeof(Command));
+    GetIniString(TypeName.c_str(), "List", "", Command, sizeof(Command));
 
     if(*Command == 0)
         return (FALSE);
 
-    IgnoreErrors = GetIniInt(TypeName, "IgnoreErrors", 0);
+    IgnoreErrors = GetIniInt(TypeName.c_str(), "IgnoreErrors", 0);
     *Type = CurType;
 
     ArcChapters = -1;
@@ -486,24 +515,27 @@ BOOL WINAPI _export CUSTOM_OpenArchive(const char *Name, int *Type)
 
     if(ExitCode)
     {
-        ExitCode = (ExitCode < GetIniInt(TypeName, "Errorlevel", 1000));
-    }
+        ExitCode = (ExitCode < GetIniInt(TypeName.c_str(), "Errorlevel", 1000));
+    } else {
+		ExitCode = 1;
+	}
 
     if(ExitCode)
     {
         OutData = NULL;
 		int fd = sdc_open(TempName, O_RDONLY);
 		if (fd!=-1) {
+			OutDataSize = OutDataPos = 0;
 			struct stat s = {0};
 			sdc_fstat(fd, &s);
 			if (s.st_size > 0) {
 				OutData = (char *) calloc(s.st_size + 1, 1);
 				if (OutData) {
-					for (off_t i = 0; i < s.st_size;) {
-						int piece = (s.st_size - i < 0x10000) ? s.st_size - i : 0x10000;
-						int r = sdc_read(fd, OutData + i, piece);
+					for (OutDataSize = 0; OutDataSize < s.st_size;) {
+						int piece = (s.st_size - OutDataSize < 0x10000) ? s.st_size - OutDataSize : 0x10000;
+						int r = sdc_read(fd, OutData + OutDataSize, piece);
 						if (r<=0) break;
-						i+= r;
+						OutDataSize+= r;
 					}
 				}
 			}
@@ -513,18 +545,20 @@ BOOL WINAPI _export CUSTOM_OpenArchive(const char *Name, int *Type)
         if(OutData == NULL)
             ExitCode = 0;
     }
+//	fprintf(stderr, "OutData: '%s'\n", OutData);
 
     WINPORT(SetConsoleTitle)(SaveTitle);
     WINPORT(SetConsoleMode)(NULL, ConsoleMode);
 
-    FillFormat(TypeName);
+	sdc_remove(TempName);
+    FillFormat(TypeName.c_str());
 
     if(ExitCode && OutDataSize == 0)
     {
-        free((HGLOBAL) OutData);
-        return (OpenArchivePipe(Name, Type));
+        free(OutData);
+		OutData = nullptr;
     }
-
+	
     return (ExitCode);
 }
 
@@ -544,37 +578,37 @@ int WINAPI _export CUSTOM_GetArcItem(struct PluginPanelItem *Item, struct ArcIte
     {
         RegExp re;
 
-        if(*StartText)
+        if(!StartText.empty())
         {
-            if(re.compile(StartText))
+            if(re.compile(StartText.c_str()))
             {
                 if(re.match(Str))
-                    *StartText = 0;
+                    StartText.clear();
             }
             else
             {
-                if((*StartText == '^' && strncmp(Str, StartText + 1, strlen(StartText + 1)) == 0) ||
-                   (*StartText != '^' && strstr(Str, StartText) != NULL))
+                if((StartText[0] == '^' && strncmp(Str, StartText.c_str() + 1, StartText.size() - 1) == 0) ||
+                   (StartText[0] != '^' && strstr(Str, StartText.c_str()) != NULL))
                 {
-                    *StartText = 0;
+                    StartText.clear();
                 }
             }
             continue;
         }
 
-        if(*EndText)
+        if(!EndText.empty())
         {
-            if(re.compile(EndText))
+            if(re.compile(EndText.c_str()))
             {
                 if(re.match(Str))
                     break;
             }
-            else if(*EndText == '^')
+            else if(EndText[0] == '^')
             {
-                if(strncmp(Str, EndText + 1, strlen(EndText + 1)) == 0)
+                if(strncmp(Str, EndText.c_str() + 1, EndText.size() - 1) == 0)
                     break;
             }
-            else if(strstr(Str, EndText) != NULL)
+            else if(strstr(Str, EndText.c_str()) != NULL)
                 break;
 
         }
@@ -640,7 +674,8 @@ BOOL WINAPI _export CUSTOM_CloseArchive(struct ArcInfo * Info)
         ArcChapters = 0;
     Info->Chapters = ArcChapters;
 
-    free((HGLOBAL) OutData);
+    free(OutData);
+	OutData = nullptr;
 
     delete Format;
     delete IgnoreStrings;
@@ -653,13 +688,13 @@ BOOL WINAPI _export CUSTOM_CloseArchive(struct ArcInfo * Info)
 
 BOOL WINAPI _export CUSTOM_GetFormatName(int Type, char *FormatName, char *DefaultExt)
 {
-    char TypeName[NM];
+    std::string TypeName;
 
-    if(!GetSectionName(Type, TypeName, sizeof(TypeName)))
+    if(!GetSectionName(Type, TypeName))
         return (FALSE);
 
-    GetIniString(TypeName, Str_TypeName, TypeName, FormatName, 64);
-    GetIniString(TypeName, "Extension", "", DefaultExt, NM);
+    GetIniString(TypeName.c_str(), Str_TypeName, TypeName.c_str(), FormatName, 64);
+    GetIniString(TypeName.c_str(), "Extension", "", DefaultExt, NM);
 
     return (*FormatName != 0);
 }
@@ -667,14 +702,14 @@ BOOL WINAPI _export CUSTOM_GetFormatName(int Type, char *FormatName, char *Defau
 
 BOOL WINAPI _export CUSTOM_GetDefaultCommands(int Type, int Command, char *Dest)
 {
-    char TypeName[NM], FormatName[NM];
+	std::string TypeName, FormatName;
 
-    if(!GetSectionName(Type, TypeName, sizeof(TypeName)))
+    if(!GetSectionName(Type, TypeName))
         return (FALSE);
 
-    GetIniString(TypeName, Str_TypeName, TypeName, FormatName, 64);
+    GetIniString(TypeName.c_str(), Str_TypeName, TypeName.c_str(), FormatName);
 
-    if(*FormatName == 0)
+    if (FormatName.empty())
         return (FALSE);
 
     static const char *CmdNames[] = { "Extract", "ExtractWithoutPath", "Test", "Delete",
@@ -684,7 +719,7 @@ BOOL WINAPI _export CUSTOM_GetDefaultCommands(int Type, int Command, char *Dest)
 
     if(Command < (int)(ARRAYSIZE(CmdNames)))
     {
-        GetIniString(TypeName, CmdNames[Command], "", Dest, 512);
+        GetIniString(TypeName.c_str(), CmdNames[Command], "", Dest, 512);
         return (TRUE);
     }
 
@@ -706,46 +741,66 @@ int HexCharToNum(int HexChar)
 }
 
 
-
-int GetSectionName(int Num, char *Name, int MaxSize)
+static bool GetSectionName(const std::string &FileName, int &Num, std::string &Name)
 {
-	{
-		KeyFileHelper kfh(FormatFileName);
-		const std::vector<std::string> &sections = kfh.EnumSections();
-		if (Num < sections.size()) {
-			strncpy(Name, sections[Num].c_str(), MaxSize);
-			return TRUE;		
-		}
-		Num-= sections.size();
+	KeyFileHelper kfh(FileName.c_str());
+	const std::vector<std::string> &sections = kfh.EnumSections();
+	if (Num < (int)sections.size()) {
+		Name = sections[Num];
+		return true;		
 	}
-	{
-		KeyFileHelper kfh(UserFormatFileName);
-		const std::vector<std::string> &sections = kfh.EnumSections();
-		if (Num < sections.size()) {
-			strncpy(Name, sections[Num].c_str(), MaxSize);
-			return TRUE;		
-		}
+	Num-= sections.size();
+	return false;
+}
+
+bool GetSectionName(int Num, std::string &Name)
+{
+	for (const auto &n : FormatFileNames) {
+		if (GetSectionName(n, Num, Name))
+			return true;
+	}
+	return false;
+
+}
+
+
+void GetIniString(LPCSTR lpAppName,LPCSTR lpKeyName,LPCSTR lpDefault, std::string &out)
+{
+	out = lpDefault;
+
+	for (const auto &n : FormatFileNames) {
+		out = KeyFileHelper(n.c_str()).GetString(lpAppName,lpKeyName, out.c_str());
 	}
 
-	return FALSE;
+	size_t len = out.size();
+	if (len >= 2 && out[0] == '\"' && out[len - 1] == '\"') {
+		out.resize(len - 1);
+		out.erase(0, 1);
+	}
 }
 
 DWORD GetIniString(LPCSTR lpAppName,LPCSTR lpKeyName,LPCSTR lpDefault,LPSTR lpReturnedString,DWORD nSize)
 {
-	KeyFileHelper(FormatFileName).GetChars(lpReturnedString, nSize, lpAppName,lpKeyName, lpDefault);
-	KeyFileHelper(UserFormatFileName).GetChars(lpReturnedString, nSize, lpAppName,lpKeyName, lpReturnedString);
+	std::string s;
+	GetIniString(lpAppName, lpKeyName, lpDefault, s);
+	strncpy(lpReturnedString, s.c_str(), nSize);
+	lpReturnedString[nSize - 1] = 0;
 	return strlen(lpReturnedString);
 }
 
 UINT GetIniInt(LPCSTR lpAppName,LPCSTR lpKeyName,INT lpDefault)
 {
-	KeyFileHelper(FormatFileName).GetInt(lpAppName,lpKeyName, KeyFileHelper(UserFormatFileName).GetInt(lpAppName,lpKeyName, lpDefault) );
+	UINT v = lpDefault;
+	for (const auto &n : FormatFileNames) {
+		v = KeyFileHelper(n.c_str()).GetInt(lpAppName, lpKeyName, v);
+	}
+	return v;
 }
 
 void FillFormat(const char *TypeName)
 {
-    GetIniString(TypeName, "Start", "", StartText, sizeof(StartText));
-    GetIniString(TypeName, "End", "", EndText, sizeof(EndText));
+    GetIniString(TypeName, "Start", "", StartText);
+    GetIniString(TypeName, "End", "", EndText);
 
     int FormatNumber = 0;
 
@@ -778,6 +833,7 @@ void FillFormat(const char *TypeName)
 
 int GetString(char *Str, int MaxSize)
 {
+	//memset(Str, 0, MaxSize);
     if(OutDataPos >= OutDataSize)
         return (FALSE);
 
@@ -795,7 +851,8 @@ int GetString(char *Str, int MaxSize)
     int Length = OutDataPos - StartPos;
     int DestLength = Length >= MaxSize ? MaxSize - 1 : Length;
 
-    strncpy(Str, OutData + StartPos, DestLength + 1);
+    memcpy(Str, OutData + StartPos, DestLength);
+	Str[DestLength] = 0;
 
     while(OutDataPos < OutDataSize)
     {
@@ -833,93 +890,6 @@ void MakeFiletime(SYSTEMTIME st, SYSTEMTIME syst, LPFILETIME pft)
     }
 }
 
-
-BOOL WINAPI OpenArchivePipe(const char *Name, int *Type)
-{
-    char TypeName[NM], Command[512];
-
-    if(!GetSectionName(CurType, TypeName, sizeof(TypeName)))
-        return (FALSE);
-    GetIniString(TypeName, "List", "", Command, sizeof(Command));
-    if(*Command == 0)
-        return (FALSE);
-    *Type = CurType;
-
-
-    MetaReplacer meta(Command, Name);
-
-    meta.replaceTo(Command);
-	int fd[2];
-	if (pipe(fd)==-1) {
-		perror("OpenArchivePipe: pipe");
-		return FALSE;
-	}
-	int pid = fork();
-	if (pid==-1) {
-		perror("OpenArchivePipe: fork");
-		close(fd[0]);
-		close(fd[1]);
-		return FALSE;		
-	}
-	
-	if (pid==0) {
-		dup2(fd[1], STDOUT_FILENO);
-		dup2(fd[1], STDERR_FILENO);
-		close(fd[0]); close(fd[1]);
-		execl("/bin/sh", "sh", "-c", Command, NULL);
-		perror("OpenArchivePipe: execl");
-		exit(errno ? errno : -1);
-	} 
-	
-	
-    DWORD ConsoleMode;
-
-    WINPORT(GetConsoleMode)(NULL, &ConsoleMode);
-    WINPORT(SetConsoleMode)(NULL, ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT |
-                   ENABLE_ECHO_INPUT | ENABLE_MOUSE_INPUT);
-    WCHAR SaveTitle[512];
-
-    WINPORT(GetConsoleTitle)(SaveTitle, sizeof(SaveTitle));
-    WINPORT(SetConsoleTitle)(MB2Wide(Command).c_str());
-
-	const int ReadSize = 32768;
-
-	OutDataSize = OutDataPos = 0;
-	OutData = (char *) NULL;//malloc(GMEM_FIXED, 0);
-
-	while(1) {
-		char *tmp = (char *) realloc(OutData, OutDataSize + ReadSize);
-		if (!tmp) {
-			perror("OpenArchivePipe: realloc");
-			free(OutData);
-			close(fd[0]); close(fd[1]);
-			return FALSE;
-		}
-		OutData = tmp;
-		int r = read(fd[0], OutData + OutDataSize, ReadSize);
-		if (r<=0) break;
-		OutDataSize += r;
-	}
-	
-	int status = 0x7fff;
-	if (waitpid(pid, &status, 0)==-1) {
-		perror("OpenArchivePipe: waitpid");
-	}
-	BOOL out = (status < GetIniInt(TypeName, "Errorlevel", 1000));
-
-	if(!out) {
-		free(OutData);
-		OutData = NULL;
-	}
-
-    WINPORT(SetConsoleTitle)(SaveTitle);
-    WINPORT(SetConsoleMode)(NULL, ConsoleMode);
-
-    FillFormat(TypeName);
-
-    return (out);
-}
-
 int StringToInt(const char *str)
 {
     int i = 0;
@@ -954,7 +924,6 @@ void ParseListingItemRegExp(Match match,
     struct PluginPanelItem *Item, struct ArcItemInfo *Info,
     SYSTEMTIME &stModification, SYSTEMTIME &stCreation, SYSTEMTIME &stAccess)
 {
-
     if(const char *p = match["name"])
         strcat(Item->FindData.cFileName, p);
     if(const char *p = match["description"])
@@ -1043,7 +1012,6 @@ void ParseListingItemPlain(const char *CurFormat, const char *CurStr,
     struct PluginPanelItem *Item, struct ArcItemInfo *Info,
     SYSTEMTIME &stModification, SYSTEMTIME &stCreation, SYSTEMTIME &stAccess)
 {
-
     enum
     { OP_OUTSIDE, OP_INSIDE, OP_SKIP }
     OptionalPart = OP_OUTSIDE;
@@ -1053,7 +1021,7 @@ void ParseListingItemPlain(const char *CurFormat, const char *CurStr,
 
     for(; *CurStr && *CurFormat; CurFormat++, CurStr++)
     {
-        if(OptionalPart == OP_SKIP)
+		if(OptionalPart == OP_SKIP)
         {
             if(*CurFormat == ')')
                 OptionalPart = OP_OUTSIDE;

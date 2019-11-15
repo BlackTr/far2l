@@ -10,19 +10,22 @@
 #include <algorithm>
 #include "sudo_private.h"
 #include "sudo.h"
+#include "sudo_askpass_ipc.h"
 
-
-bool ConfirmationDialog(const char *title, const char *text);
 
 namespace Sudo 
 {
+	std::string g_sudo_title = "SUDO request";
+	std::string g_sudo_prompt = "Enter password";
+	std::string g_sudo_confirm = "Confirm priviledged operation";
+
 	static std::mutex s_client_mutex;
 	static int s_client_pipe_send = -1;
 	static int s_client_pipe_recv = -1;
 	static std::string g_curdir_override;
 	static struct ListOfStrings : std::list<std::string> {} g_recent_curdirs;
 	
-	static std::string 	g_sudo_app, g_askpass_app;
+	static std::string g_sudo_app, g_askpass_app;
 	
 	enum ModifyState
 	{
@@ -33,11 +36,12 @@ namespace Sudo
 	struct ThreadRegionCounter
 	{
 		int count;
+		int silent_query;
 		ModifyState modify;
 		bool cancelled;
 	};
 	
-	thread_local ThreadRegionCounter thread_client_region_counter = { 0, MODIFY_UNDEFINED, false };
+	thread_local ThreadRegionCounter thread_client_region_counter = { 0, 0, MODIFY_UNDEFINED, false };
 	static int global_client_region_counter = 0;
 	static SudoClientMode client_mode = SCM_DISABLE;
 	static time_t client_password_expiration = 0;
@@ -65,16 +69,21 @@ namespace Sudo
 			if (bt.IsFailed() || cmd!=SUDO_CMD_PING)
 				throw "ping failed";
 				
-			if (!g_curdir_override.empty()) {
+			std::string cwd = g_curdir_override;
+			if (cwd.empty()) {
+				char buf[PATH_MAX + 1] = {0};
+				if (getcwd(buf, PATH_MAX))
+					cwd = buf;
+			}
+			if (!cwd.empty()) {
 				cmd = SUDO_CMD_CHDIR;
 				bt.SendPOD(cmd);
-				bt.SendStr(g_curdir_override.c_str());
+				bt.SendStr(cwd.c_str());
 				int r = bt.RecvInt();
 				if (r == -1) {
 					bt.RecvErrno();
 				} else {
-					std::string str;
-					bt.RecvStr(str);
+					bt.RecvStr(cwd);
 				}
 				
 				bt.RecvPOD(cmd);
@@ -91,18 +100,15 @@ namespace Sudo
 			return false;
 		}
 		
+		
 		return true;
 	}
 	
+
+	
 	static bool ClientConfirm()
 	{
-		const char *title = getenv(SDC_ENV_TITLE);
-		const char *text = getenv(SDC_ENV_CONFIRM);
-		if (!title)
-			title = "sudo";
-		if (!text)
-			text = "Confirm priviledged operation";
-		return ConfirmationDialog(title, text);
+		return SudoAskpassRequestConfirmation() == SAR_OK;
 	}
 
 	static bool LaunchDispatcher(int pipe_request, int pipe_reply)
@@ -126,8 +132,9 @@ namespace Sudo
 			close(pipe_reply);
 			dup2(pipe_request, STDIN_FILENO);
 			close(pipe_request);
-	
-			//if process doesn't hav terminal then sudo caches password per parent pid
+			if (chdir("/bin") == -1)  //avoid locking arbitrary current dir
+				perror("chdir");
+			//if process doesn't have terminal then sudo caches password per parent pid
 			//so don't use intermediate shell for running it!
 			r = execlp("sudo", "-n", "-A", "-k", g_sudo_app.c_str(), NULL);
 			perror("execl");
@@ -272,9 +279,9 @@ namespace Sudo
 			const char *sudo_app, const char *askpass_app,
 			const char *sudo_title, const char *sudo_prompt, const char *sudo_confirm)
 		{
-			setenv(SDC_ENV_TITLE, sudo_title, 1);
-			setenv(SDC_ENV_PROMPT, sudo_prompt, 1);
-			setenv(SDC_ENV_CONFIRM, sudo_confirm, 1);
+			if (sudo_title && *sudo_title) g_sudo_title = sudo_title;
+			if (sudo_prompt && *sudo_prompt) g_sudo_prompt = sudo_prompt;
+			if (sudo_confirm && *sudo_confirm) g_sudo_confirm = sudo_confirm;
 
 			std::lock_guard<std::mutex> lock(s_client_mutex);
 			g_sudo_app = sudo_app;
@@ -309,6 +316,16 @@ namespace Sudo
 			CheckForCloseClientConnection();
 		}
 		
+		 __attribute__ ((visibility("default"))) void sudo_silent_query_region_enter()
+		{
+			thread_client_region_counter.silent_query++;
+		}
+
+		 __attribute__ ((visibility("default"))) void sudo_silent_query_region_leave()
+		{
+			thread_client_region_counter.silent_query--;
+		}
+
 	}
 	
 
@@ -330,6 +347,9 @@ namespace Sudo
 			return false;
 
 		if (s_client_pipe_send==-1 || s_client_pipe_recv==-1) {
+			if (thread_client_region_counter.silent_query > 0 && !want_modify)
+				return false;
+
 			CloseClientConnection();
 			if (!OpenClientConnection())
 				return false;

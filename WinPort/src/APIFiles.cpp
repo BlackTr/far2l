@@ -7,18 +7,17 @@
 #include <fstream>
 #include <mutex>
 #include <utils.h>
-
-#include <wx/wx.h>
-#include <wx/display.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "WinCompat.h"
 #include "WinPort.h"
 #include "WinPortHandle.h"
 #include "PathHelpers.h"
 #include "sudo.h"
-
-
-
+#include <os_call.hpp>
 
 template <class CHAR_T>
 static DWORD EvaluateAttributesT(uint32_t unix_mode, const CHAR_T *name)
@@ -46,8 +45,11 @@ static DWORD EvaluateAttributesT(uint32_t unix_mode, const CHAR_T *name)
 			rv|= FILE_ATTRIBUTE_HIDDEN;
 	}
 
-	if ((unix_mode & (S_IXUSR | S_IXGRP | S_IXOTH))!=0)
+	if ((unix_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0)
 		rv|= FILE_ATTRIBUTE_EXECUTABLE;
+
+	if ((unix_mode & (S_IWUSR | S_IWGRP | S_IWOTH)) == 0)
+		rv|= FILE_ATTRIBUTE_READONLY;
 
 	return rv;
 }
@@ -60,7 +62,9 @@ extern "C"
 
 		virtual ~WinPortHandleFile()
 		{
-			sdc_close(fd);
+			if (os_call_int(sdc_close, fd) == -1 ){
+				fprintf(stderr, "~WinPortHandleFile: error %u closing fd %d", errno, fd);
+			}	
 		}
 		int fd;
 	};
@@ -70,11 +74,12 @@ extern "C"
 	
 	WINPORT_DECL(CreateDirectory, BOOL, (LPCWSTR lpPathName, LPSECURITY_ATTRIBUTES lpSecurityAttributes ))
 	{
-		std::string path = ConsumeWinPath(lpPathName);
-		int r = sdc_mkdir(path.c_str(), 0775);
-		if (r==-1) {
+		const std::string &path = ConsumeWinPath(lpPathName);
+		int r = os_call_int(sdc_mkdir, path.c_str(), (mode_t)0775);
+			
+		if (r == -1) {
 			WINPORT(TranslateErrno)();
-			fprintf(stderr, "Failed to create directory: %s errno %u\n", path.c_str(), errno);
+			fprintf(stderr, "Failed to create directory: '%s' errno %u\n", path.c_str(), errno);
 			return FALSE;
 		}
 		
@@ -84,28 +89,36 @@ extern "C"
 
 	BOOL WINPORT(RemoveDirectory)( LPCWSTR lpDirName)
 	{
-		std::string path = ConsumeWinPath(lpDirName);
-		int r = sdc_rmdir(path.c_str());
-		if (r==-1) {
+		const std::string &path = ConsumeWinPath(lpDirName);
+		int r = os_call_int(sdc_rmdir, path.c_str());
+
+		if (r == -1){
 			WINPORT(TranslateErrno)();
-			fprintf(stderr, "Failed to remove directory: %s errno %u\n", path.c_str(),errno);
+			fprintf(stderr, "Failed to remove directory: '%s' errno %u\n", path.c_str(),errno);
 			return FALSE;
 		}
+		
 		return TRUE;
 	}
 
 	BOOL WINPORT(DeleteFile)( LPCWSTR lpFileName)
 	{
-		std::string path = ConsumeWinPath(lpFileName);
-		int r = sdc_remove(path.c_str());
-		if (r==-1) {
+		const std::string &path = ConsumeWinPath(lpFileName);
+		int r = os_call_int(sdc_remove, path.c_str());
+
+		if (r == -1) {
 			WINPORT(TranslateErrno)();
-			fprintf(stderr, "Failed to remove file: %s errno %u\n", path.c_str(), errno);
+			fprintf(stderr, "Failed to remove file: '%s' errno %u\n", path.c_str(), errno);
 			return FALSE;
 		}
+		
 		return TRUE;
 	}
 
+	static int open_all_args(const char* pathname, int flags, mode_t mode)
+	{
+		return sdc_open(pathname, flags, mode);
+	}
 
 	HANDLE WINPORT(CreateFile)( LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
 		LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, 
@@ -123,7 +136,7 @@ extern "C"
 		flags|= O_CLOEXEC;
 #ifdef __linux__
 		if ((dwFlagsAndAttributes & FILE_FLAG_WRITE_THROUGH) != 0)
-			flags|= O_SYNC;
+			flags|= O_DSYNC;
 
 		if ((dwFlagsAndAttributes & FILE_FLAG_NO_BUFFERING) != 0)
 			flags|= O_DIRECT;
@@ -138,8 +151,9 @@ extern "C"
 		case OPEN_EXISTING: break;
 		case TRUNCATE_EXISTING: flags|= O_TRUNC; break;
 		}
-		std::string path = ConsumeWinPath(lpFileName);
-		int r = sdc_open(path.c_str(), flags, (dwFlagsAndAttributes&FILE_ATTRIBUTE_EXECUTABLE) ? 0755 : 0644);		
+		const std::string &path = ConsumeWinPath(lpFileName);
+		mode_t mode = (dwFlagsAndAttributes&FILE_ATTRIBUTE_EXECUTABLE) ? 0755 : 0644;
+		int r = os_call_int(open_all_args, path.c_str(), flags, mode);		
 		if (r==-1) {
 			WINPORT(TranslateErrno)();
 
@@ -151,9 +165,14 @@ extern "C"
 
 #ifndef __linux__
 		if ((dwFlagsAndAttributes & (FILE_FLAG_WRITE_THROUGH|FILE_FLAG_NO_BUFFERING)) != 0) {
+#ifdef __FreeBSD__
+			fcntl(r, O_DIRECT, 1);
+#elif !defined(__CYGWIN__)
 			fcntl(r, F_NOCACHE, 1);
+#endif // __FreeBSD__
 		}
-#endif
+#endif // __linux__
+
 		/*nobody cares.. if ((dwFlagsAndAttributes&FILE_FLAG_BACKUP_SEMANTICS)==0) {
 			struct stat s = { };
 			sdc_fstat(r, &s);
@@ -170,12 +189,12 @@ extern "C"
 	BOOL WINPORT(MoveFile)(LPCWSTR ExistingFileName, LPCWSTR NewFileName )
 	{
 		struct stat s;
-		if (sdc_stat(ConsumeWinPath(NewFileName).c_str(), &s)==0) {
+		if (os_call_int(sdc_stat, ConsumeWinPath(NewFileName).c_str(), &s)==0) {
 			WINPORT(SetLastError)(ERROR_ALREADY_EXISTS);
 			return false;			
 		}
 			
-		return (sdc_rename(ConsumeWinPath(ExistingFileName).c_str(), ConsumeWinPath(NewFileName).c_str())==0);
+		return (os_call_int(sdc_rename, ConsumeWinPath(ExistingFileName).c_str(), ConsumeWinPath(NewFileName).c_str())==0);
 	}
 
 	BOOL WINPORT(MoveFileEx)(LPCWSTR ExistingFileName, LPCWSTR NewFileName,DWORD dwFlags)
@@ -183,7 +202,7 @@ extern "C"
 		if ((dwFlags&MOVEFILE_REPLACE_EXISTING)==0)
 			return WINPORT(MoveFile)(ExistingFileName, NewFileName);
 
-		return (sdc_rename(ConsumeWinPath(ExistingFileName).c_str(), ConsumeWinPath(NewFileName).c_str())==0);
+		return (os_call_int(sdc_rename, ConsumeWinPath(ExistingFileName).c_str(), ConsumeWinPath(NewFileName).c_str())==0);
 	}
 
 	DWORD WINPORT(GetCurrentDirectory)( DWORD  nBufferLength, LPWSTR lpBuffer)
@@ -200,7 +219,13 @@ extern "C"
 
 	BOOL WINPORT(SetCurrentDirectory)(LPCWSTR lpPathName)
 	{
-		return (sdc_chdir(ConsumeWinPath(lpPathName).c_str())==0) ? TRUE : FALSE;
+		const std::string &path = ConsumeWinPath(lpPathName);
+		int r = os_call_int(sdc_chdir, path.c_str());
+		if (r == 0)
+			return TRUE;
+
+		WINPORT(TranslateErrno)();
+		return FALSE;
 	}
 
 	BOOL WINPORT(GetFileSizeEx)( HANDLE hFile, PLARGE_INTEGER lpFileSize)
@@ -215,8 +240,8 @@ extern "C"
 			return FALSE;
 		lpFileSize->QuadPart = len;
 #else
-		struct stat s = {0};
-		if (sdc_fstat(wph->fd,  &s)<0)
+		struct stat s{};
+		if (os_call_int(sdc_fstat, wph->fd,  &s) == -1)
 			return FALSE;
 		lpFileSize->QuadPart = s.st_size;
 #endif
@@ -225,7 +250,7 @@ extern "C"
 
 	DWORD WINPORT(GetFileSize)( HANDLE  hFile, LPDWORD lpFileSizeHigh)
 	{
-		LARGE_INTEGER sz64 = {0};
+		LARGE_INTEGER sz64{};
 		if (!WINPORT(GetFileSizeEx)(hFile, &sz64)) {
 			if (lpFileSizeHigh) *lpFileSizeHigh = 0;
 			return INVALID_FILE_SIZE;
@@ -249,10 +274,12 @@ extern "C"
 		ssize_t done = 0, remain = nNumberOfBytesToRead;
 		for (;;) {
 			if (!remain) break;
-			ssize_t r = sdc_read(wph->fd, lpBuffer, remain);
+			ssize_t r = os_call_v<ssize_t, -1>(sdc_read, wph->fd, lpBuffer, (size_t)remain);
 			if (r < 0) {
-				if (done==0)
+				if (done==0) {
+					WINPORT(TranslateErrno)();
 					return FALSE;
+				}
 				break;
 			}
 			if (!r) break;
@@ -281,9 +308,11 @@ extern "C"
 			fprintf(stderr, "WINPORT(WriteFile) with lpOverlapped\n");
 		}
 
-		ssize_t r = sdc_write(wph->fd, lpBuffer, nNumberOfBytesToWrite);
-		if (r < 0)
+		ssize_t r = os_call_v<ssize_t, -1>(sdc_write, wph->fd, lpBuffer, (size_t)nNumberOfBytesToWrite);
+		if (r < 0) {
+			WINPORT(TranslateErrno)();
 			return FALSE;
+		}
 
 		if (lpNumberOfBytesWritten) 
 			*lpNumberOfBytesWritten = r;
@@ -306,7 +335,7 @@ extern "C"
 			return INVALID_SET_FILE_POINTER;
 		}
 
-		off_t r = sdc_lseek(wph->fd, liDistanceToMove.QuadPart, whence);
+		off_t r = os_call_v<off_t, -1>(sdc_lseek, wph->fd, (off_t)liDistanceToMove.QuadPart, whence);
 		if (r==(off_t)-1)
 			return FALSE;
 		if (lpNewFilePointer) lpNewFilePointer->QuadPart = r;
@@ -315,7 +344,7 @@ extern "C"
 
 	DWORD WINPORT(SetFilePointer)( HANDLE hFile, LONG lDistanceToMove, PLONG  lpDistanceToMoveHigh, DWORD  dwMoveMethod)
 	{
-		LARGE_INTEGER liDistanceToMove, liNewFilePointer = {0};
+		LARGE_INTEGER liDistanceToMove, liNewFilePointer = {};
 		if (lpDistanceToMoveHigh) {
 			liDistanceToMove.LowPart = lDistanceToMove;
 			liDistanceToMove.HighPart = lpDistanceToMoveHigh ? *lpDistanceToMoveHigh : 0;			
@@ -339,13 +368,35 @@ extern "C"
 		if (!wph) {
 			return FALSE;
 		}
-		struct stat s = {0};
-		if (sdc_fstat(wph->fd, &s) < 0)
+		struct stat s{};
+		if (os_call_int(sdc_fstat, wph->fd, &s) < 0)
 			return FALSE;
 			
 		WINPORT(FileTime_UnixToWin32)(s.st_mtim, lpLastWriteTime);
 		WINPORT(FileTime_UnixToWin32)(s.st_ctim, lpCreationTime);
 		WINPORT(FileTime_UnixToWin32)(s.st_atim, lpLastAccessTime);
+		return TRUE;
+	}
+
+	BOOL WINPORT(SetFileTime)( HANDLE hFile, const FILETIME *lpCreationTime, 
+		const FILETIME *lpLastAccessTime, const FILETIME *lpLastWriteTime)
+	{
+		AutoWinPortHandle<WinPortHandleFile> wph(hFile);
+		if (!wph) {
+			return FALSE;
+		}
+
+		struct timespec ts[2] = {};
+		if (lpLastAccessTime) {
+			WINPORT(FileTime_Win32ToUnix)(lpLastAccessTime, &ts[0]);
+		}
+		if (lpLastWriteTime) {
+			WINPORT(FileTime_Win32ToUnix)(lpLastWriteTime, &ts[1]);
+		}
+		const struct timeval tv[2] = { {ts[0].tv_sec, ts[0].tv_nsec / 1000}, {ts[1].tv_sec, ts[1].tv_nsec / 1000}};
+		if (os_call_int(sdc_futimes, wph->fd, tv) < 0)
+			return FALSE;
+
 		return TRUE;
 	}
 	
@@ -362,18 +413,18 @@ extern "C"
 	
 	static int stat_symcheck(const char *path, struct stat &s, DWORD &symattr)
 	{
-		if (sdc_lstat(path, &s) < 0) {
-			fprintf(stderr, "stat_symcheck: lstat failed for %s\n", path);
+		if (os_call_int(sdc_lstat, path, &s) < 0) {
 			return -1;
 		}
 		
 		if ((s.st_mode & S_IFMT) == S_IFLNK) {
-			struct stat sdst = {0};
-			if (sdc_stat(path, &sdst) == 0) {
+			struct stat sdst{};
+			if (os_call_int(sdc_stat, path, &sdst) == 0) {
 				s = sdst;
 				symattr = FILE_ATTRIBUTE_REPARSE_POINT;
 			} else {
-				fprintf(stderr, "stat_symcheck: stat failed for %s\n", path);
+				s.st_size = 0;
+				//fprintf(stderr, "stat_symcheck: stat failed for %s\n", path);
 				symattr = FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_BROKEN;
 			}
 		} else
@@ -386,12 +437,13 @@ extern "C"
 
 	DWORD WINPORT(GetFileAttributes)(LPCWSTR lpFileName)
 	{
-		struct stat s = { };
+		struct stat s{};
 		const std::string &path = ConsumeWinPath(lpFileName);
 		
 		DWORD symattr = 0;
 		if (stat_symcheck(path.c_str(), s, symattr) < 0 ) {
 			WINPORT(TranslateErrno)();
+			fprintf(stderr, "GetFileAttributes: stat_symcheck failed for '%s'\n", path.c_str());
 			return INVALID_FILE_ATTRIBUTES;			
 		}
 		
@@ -411,10 +463,10 @@ extern "C"
 			return FALSE;
 		}
 
-		off_t pos = sdc_lseek(wph->fd, 0, SEEK_CUR);
+		off_t pos = os_call_v<off_t, -1>(sdc_lseek, wph->fd, (off_t)0, SEEK_CUR);
 		if (pos==(off_t)-1)
 			return FALSE;
-		if (sdc_ftruncate(wph->fd, pos) == -1)
+		if (os_call_int(sdc_ftruncate, wph->fd, pos) == -1)
 			return FALSE;
 
 		return TRUE;
@@ -441,7 +493,7 @@ extern "C"
 		return FILE_TYPE_DISK;//::GetFileType(hFile);
 #else
 		struct stat s;
-		if (sdc_fstat(wph->fd, &s) == 0) {
+		if (os_call_int(sdc_fstat, wph->fd, &s) == 0) {
 
 			switch (s.st_mode & S_IFMT) {
 			case S_IFCHR: return FILE_TYPE_CHAR;
@@ -479,7 +531,12 @@ extern "C"
 		lpFindFileData->dwReserved0 = 
 			(lpFindFileData->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT ) ? IO_REPARSE_TAG_SYMLINK : 0;
 		lpFindFileData->dwReserved1 = 0;
+		lpFindFileData->UnixDevice = s.st_dev;
+		lpFindFileData->UnixNode = s.st_ino;
+		lpFindFileData->UnixOwner = s.st_uid;
+		lpFindFileData->UnixGroup = s.st_gid;
 		lpFindFileData->dwUnixMode = s.st_mode;
+		lpFindFileData->nHardLinks = (DWORD)s.st_nlink;
 		wcsncpy(lpFindFileData->cFileName, name, MAX_NAME - 1);
 	}
 
@@ -491,10 +548,10 @@ extern "C"
 #ifdef _WIN32
 			_h = INVALID_HANDLE_VALUE;
 #else
-			_d = NULL;
+			_d = nullptr;
 #endif
 		}
-		UnixFindFile(const std::string &root, const std::string &mask) 
+		UnixFindFile(const std::string &root, const std::string &mask, DWORD flags) : _flags(flags)
 		{
 			_root = root;
 			_mask = mask;
@@ -503,11 +560,10 @@ extern "C"
 #else
 			if (_root.size() > 1 && _root[_root.size()-1]==GOOD_SLASH)
 				_root.resize(_root.size()-1);
-			_d = sdc_opendir(_root.c_str());
+			_d = os_call_pv<DIR>(sdc_opendir, _root.c_str());
 			if (!_d) {
 				fprintf(stderr, "opendir failed on %s\n", _root.c_str());
-			} 
-				
+			}
 #endif
 		}
 
@@ -516,7 +572,7 @@ extern "C"
 #ifdef _WIN32
 			if (_h!=INVALID_HANDLE_VALUE) ::FindClose(_h);
 #else
-			if (_d) sdc_closedir(_d);
+			if (_d) os_call_int(sdc_closedir, _d);
 #endif
 		}
 
@@ -533,57 +589,140 @@ extern "C"
 				} else if (!::FindNextFileA(_h, &wfd))
 					return false;
 
-				if (_mask.empty() || MatchWildcard(wfd.cFileName, _mask.c_str())) break;
+				if ( MatchName(wfd.cFileName) ) {
+					if (MatchAttributesAndFillWFD(0, wfd.cFileName, lpFindFileData)) {
+						break;
+					}
+				}
 			}
-			std::string path(_root);
-			if (path.empty() || path[path.size()-1]!=GOOD_SLASH) path+= GOOD_SLASH;
-			path+= wfd.cFileName;
-			std::wstring utf16 = MB2Wide(wfd.cFileName);
 #else
 			struct dirent *de;
 			for (;;) {
 				if (!_d)
 					return false;
-
-				de = sdc_readdir(_d);
+				
+				errno = 0;
+				de = os_call_pv<struct dirent>(sdc_readdir, _d);
 				if (!de)
 					return false;
-				if (_mask.empty() || MatchWildcard(de->d_name, _mask.c_str())) break;
-			}
-			std::string path(_root);
-			if (path.empty() || path[path.size()-1]!=GOOD_SLASH) path+= GOOD_SLASH;
-			path+= de->d_name;
-			std::wstring utf16 = MB2Wide(de->d_name);
-#endif
 
-			struct stat s = { };
-			DWORD symattr = 0;
-			if (stat_symcheck(path.c_str(), s, symattr) < 0 ) {
-				fprintf(stderr, "UnixFindFile: stat failed for %s\n",path.c_str());
+				if ( PreMatchDType(de->d_type) && MatchName(de->d_name) ) {
+					mode_t hint_mode_type;
+					switch (de->d_type) {
+						case DT_DIR: hint_mode_type = S_IFDIR; break;
+						case DT_REG: hint_mode_type = S_IFREG; break;
+						case DT_LNK: hint_mode_type = S_IFLNK; break;
+						case DT_BLK: hint_mode_type = S_IFBLK; break;
+						case DT_FIFO: hint_mode_type = S_IFIFO; break;
+						case DT_CHR: hint_mode_type = S_IFCHR; break;
+						case DT_SOCK: hint_mode_type = S_IFSOCK; break;
+						default: hint_mode_type = 0; 
+					}
+					if (MatchAttributesAndFillWFD(hint_mode_type, de->d_name, lpFindFileData))
+						return true;
+				}
 			}
-						
-			FillWFD((const wchar_t *)utf16.c_str(), s, lpFindFileData, symattr);
-			//fprintf(stderr, "stat attr %x for %s\n", lpFindFileData->dwFileAttributes , path.c_str());
-			return true;
+#endif
 		}
 
 	private:
+		bool MatchAttributesAndFillWFD(mode_t hint_mode_type, const char *name, LPWIN32_FIND_DATAW lpFindFileData)
+		{
+			_tmp.path = _root;
+			if (_tmp.path.empty() || _tmp.path[_tmp.path.size()-1] != GOOD_SLASH) 
+				_tmp.path+= GOOD_SLASH;
+
+			SudoSilentQueryRegion ssqr(hint_mode_type !=0 && (_flags & FIND_FILE_FLAG_NOT_ANNOYING) != 0);
+
+			_tmp.path+= name;
+			struct stat s = { };
+			DWORD symattr = 0;
+			if (stat_symcheck(_tmp.path.c_str(), s, symattr) < 0 ) {
+				fprintf(stderr, "UnixFindFile: stat_symcheck failed for '%s'\n", _tmp.path.c_str());
+				symattr|= FILE_ATTRIBUTE_BROKEN;
+				if (hint_mode_type)
+					s.st_mode = hint_mode_type;
+			}
+			MB2Wide(name, _tmp.wide_name);
+			FillWFD((const wchar_t *)_tmp.wide_name.c_str(), s, lpFindFileData, symattr);
+			
+			const DWORD attrs = lpFindFileData->dwFileAttributes;
+			if ((attrs & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+				if ((_flags & FIND_FILE_FLAG_NO_DIRS) != 0 )
+					return false;
+			}
+			if ((attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+				if ((_flags & FIND_FILE_FLAG_NO_LINKS) != 0 )
+					return false;
+			}
+			if ((attrs & FILE_ATTRIBUTE_DEVICE) != 0) {
+				if ((_flags & FIND_FILE_FLAG_NO_DEVICES) != 0 )
+					return false;
+			}
+			if ((attrs & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_DEVICE | FILE_ATTRIBUTE_REPARSE_POINT))==0) {
+				if ((_flags & FIND_FILE_FLAG_NO_FILES) != 0 ) {
+					return false;
+				}
+			}
+			
+			return true;
+		}
+
+		bool MatchName(const char *name) 
+		{
+			if ((_flags & FIND_FILE_FLAG_NO_CUR_UP) != 0) {
+				if (name[0] == '.') {
+					if (name[1] == 0) {
+						return false;
+					}
+					if (name[1] == '.' && name[2] == 0) {
+						return false;					
+					}
+				}
+			}
+			if (_mask.empty())
+				return true;
+			
+			if ((_flags & FIND_FILE_FLAG_CASE_INSENSITIVE) != 0)
+				return MatchWildcardICE(name, _mask.c_str());
+
+			return MatchWildcard(name, _mask.c_str());
+		}
+		
 #ifdef _WIN32
 		HANDLE _h;
 #else
 		DIR *_d;
+		
+		bool PreMatchDType(unsigned char d_type)
+		{
+			switch (d_type) {
+				case DT_DIR: return (_flags & FIND_FILE_FLAG_NO_DIRS) == 0;
+				case DT_REG: return (_flags & FIND_FILE_FLAG_NO_FILES) == 0;
+				case DT_LNK: return (_flags & FIND_FILE_FLAG_NO_LINKS) == 0;
+				case DT_UNKNOWN: return true;
+				
+				default: return (_flags&FIND_FILE_FLAG_NO_DEVICES) == 0;
+				
+			}
+		}
 #endif
+		struct {
+			std::string path;
+			std::wstring wide_name;			
+		} _tmp;
 		std::string _root;
 		std::string _mask;
+		DWORD _flags;
 	};
 
 	struct UnixFindFiles : std::set<UnixFindFile *>, std::mutex
 	{
 	} g_unix_find_files;
 
-	static UnixFindFile g_unix_found_file_dummy;
+	static volatile int g_unix_found_file_dummy = 0xfeedd00d;
 
-	HANDLE WINPORT(FindFirstFile)(LPCWSTR lpFileName, LPWIN32_FIND_DATAW lpFindFileData)
+	HANDLE WINPORT(FindFirstFileWithFlags)(LPCWSTR lpFileName, LPWIN32_FIND_DATAW lpFindFileData, DWORD dwFlags)
 	{
 		//return ::FindFirstFile(lpFileName, lpFindFileData);
 		std::string root(ConsumeWinPath(lpFileName)), mask;
@@ -596,15 +735,16 @@ extern "C"
 		}
 
 		if (mask=="*" || mask=="*.*") mask.clear();
-		if (!mask.empty() && mask.find('*')==std::string::npos && mask.find('?')==std::string::npos) {
+		if (!mask.empty() && mask.find('*')==std::string::npos && mask.find('?')==std::string::npos &&
+			(dwFlags & FIND_FILE_FLAG_CASE_INSENSITIVE) == 0 ) {
 
 			struct stat s = { };
 			DWORD symattr = 0;
 			if (stat_symcheck((root + mask).c_str(), s, symattr) < 0 ) {
 				WINPORT(TranslateErrno)();
+				fprintf(stderr, "FindFirstFileWithFlags: stat_symcheck failed for '%s' / '%s'\n", root.c_str(), mask.c_str());
 				return INVALID_HANDLE_VALUE;			
 			}
-
 			LPCWSTR name = wcsrchr(lpFileName, GOOD_SLASH);
 			if (name) ++name; else name = lpFileName;
 			FillWFD(name, s, lpFindFileData, symattr);
@@ -612,27 +752,31 @@ extern "C"
 		}
 
 
-		UnixFindFile *uff = new UnixFindFile(root, mask);
+		UnixFindFile *uff = new UnixFindFile(root, mask, dwFlags);
 		if (!uff->Iterate(lpFindFileData)) {
-			WINPORT(TranslateErrno)();
+			//WINPORT(TranslateErrno)();
 			delete uff;
-			fprintf(stderr, "find mask: %s (for %ls) FAILED\n", mask.c_str(), lpFileName);
+			//fprintf(stderr, "find mask: %s (for %ls) FAILED\n", mask.c_str(), lpFileName);
 			WINPORT(SetLastError)(ERROR_FILE_NOT_FOUND);
 			return INVALID_HANDLE_VALUE;
 		}
 		//fprintf(stderr, "find mask: %s  (for %ls) - %ls", mask.c_str(), lpFileName, lpFindFileData->cFileName);
-
 		std::lock_guard<std::mutex> lock(g_unix_find_files);
 		g_unix_find_files.insert(uff);
 		return (HANDLE)uff;
 	}
 
+	WINPORT_DECL(FindFirstFile, HANDLE, (LPCWSTR lpFileName, LPWIN32_FIND_DATAW lpFindFileData))
+	{
+		return WINPORT(FindFirstFileWithFlags)(lpFileName, lpFindFileData, 0);
+	}
+
 	BOOL WINPORT(FindNextFile)(HANDLE hFindFile, LPWIN32_FIND_DATAW lpFindFileData)
 	{
 		//return ::FindNextFile(hFindFile, lpFindFileData);
-		UnixFindFile *uff = (UnixFindFile *)hFindFile;
-		if (uff==&g_unix_found_file_dummy)
+		if (hFindFile == (HANDLE)&g_unix_found_file_dummy)
 			return FALSE;
+		UnixFindFile *uff = (UnixFindFile *)hFindFile;
 		std::lock_guard<std::mutex> lock(g_unix_find_files);
 		if (g_unix_find_files.find(uff)==g_unix_find_files.end())
 			return FALSE;
@@ -650,9 +794,10 @@ extern "C"
 	BOOL WINPORT(FindClose)(HANDLE hFindFile)
 	{
 		//return ::FindClose(hFindFile);
-		UnixFindFile *uff = (UnixFindFile *)hFindFile;
-		if (uff==&g_unix_found_file_dummy)
+		if (hFindFile == (HANDLE)&g_unix_found_file_dummy)
 			return TRUE;
+
+		UnixFindFile *uff = (UnixFindFile *)hFindFile;
 		{
 			std::lock_guard<std::mutex> lock(g_unix_find_files);
 			if (g_unix_find_files.erase(uff)==0)
@@ -720,7 +865,7 @@ extern "C"
 			do
 			{
 				swprintf( p, MAX_PATH - 1 - (p - buffer), formatW, unique );
-				handle = WINPORT(CreateFile)( buffer, GENERIC_WRITE, 0, NULL,
+				handle = WINPORT(CreateFile)( buffer, GENERIC_WRITE, 0, nullptr,
 					CREATE_NEW, FILE_ATTRIBUTE_NORMAL, 0 );
 				if (handle != INVALID_HANDLE_VALUE)
 				{  /* We created it */

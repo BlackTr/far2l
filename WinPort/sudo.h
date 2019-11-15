@@ -1,5 +1,11 @@
 #pragma once
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#ifdef __APPLE__
+  #include <sys/mount.h>
+#elif !defined(__FreeBSD__)
+  #include <sys/statfs.h>
+#endif
 #include <dirent.h>
 
 #ifdef __cplusplus
@@ -26,12 +32,18 @@ extern "C" {
 
  __attribute__ ((visibility("default"))) void sudo_client_region_enter();
  __attribute__ ((visibility("default"))) void sudo_client_region_leave();
+ __attribute__ ((visibility("default"))) void sudo_silent_query_region_enter();
+ __attribute__ ((visibility("default"))) void sudo_silent_query_region_leave();
 
  __attribute__ ((visibility("default"))) int sdc_close(int fd);
  __attribute__ ((visibility("default"))) int sdc_open(const char* pathname, int flags, ...);
  __attribute__ ((visibility("default"))) off_t sdc_lseek(int fd, off_t offset, int whence);
  __attribute__ ((visibility("default"))) ssize_t sdc_write(int fd, const void *buf, size_t count);
  __attribute__ ((visibility("default"))) ssize_t sdc_read(int fd, void *buf, size_t count);
+#ifndef __FreeBSD__
+ __attribute__ ((visibility("default"))) int sdc_statfs(const char *path, struct statfs *buf);
+#endif
+ __attribute__ ((visibility("default"))) int sdc_statvfs(const char *path, struct statvfs *buf);
  __attribute__ ((visibility("default"))) int sdc_stat(const char *path, struct stat *buf);
  __attribute__ ((visibility("default"))) int sdc_lstat(const char *path, struct stat *buf);
  __attribute__ ((visibility("default"))) int sdc_fstat(int fd, struct stat *buf);
@@ -48,12 +60,18 @@ extern "C" {
  __attribute__ ((visibility("default"))) int sdc_chmod(const char *pathname, mode_t mode);
  __attribute__ ((visibility("default"))) int sdc_chown(const char *pathname, uid_t owner, gid_t group);
  __attribute__ ((visibility("default"))) int sdc_utimes(const char *filename, const struct timeval times[2]);
+ __attribute__ ((visibility("default"))) int sdc_futimes(int fd, const struct timeval tv[2]);
  __attribute__ ((visibility("default"))) int sdc_rename(const char *path1, const char *path2);
  __attribute__ ((visibility("default"))) int sdc_symlink(const char *path1, const char *path2);
  __attribute__ ((visibility("default"))) int sdc_link(const char *path1, const char *path2);
  __attribute__ ((visibility("default"))) char *sdc_realpath(const char *path, char *resolved_path);
+ __attribute__ ((visibility("default"))) ssize_t sdc_readlink(const char *pathname, char *buf, size_t bufsiz);
  __attribute__ ((visibility("default"))) char *sdc_getcwd(char *buf, size_t size);
- 
+ __attribute__ ((visibility("default"))) ssize_t sdc_flistxattr(int fd, char *namebuf, size_t size);
+ __attribute__ ((visibility("default"))) ssize_t sdc_fgetxattr(int fd, const char *name,void *value, size_t size);
+ __attribute__ ((visibility("default"))) int sdc_fsetxattr(int fd, const char *name, const void *value, size_t size, int flags);
+ __attribute__ ((visibility("default"))) int sdc_fs_flags_get(const char *path, int *flags);
+ __attribute__ ((visibility("default"))) int sdc_fs_flags_set(const char *path, int flags);
 #ifdef __cplusplus
 }
 
@@ -67,6 +85,32 @@ struct SudoClientRegion
 	inline ~SudoClientRegion()
 	{
 		sudo_client_region_leave();
+	}
+};
+
+class SudoSilentQueryRegion
+{
+	bool _entered;
+
+public:
+	inline SudoSilentQueryRegion(bool enter = true) : _entered(enter)
+	{
+		if (enter)
+			sudo_silent_query_region_enter();
+	}
+	
+	inline void Enter()
+	{
+		if (!_entered) {
+			_entered = true;
+			sudo_silent_query_region_enter();
+		}
+	}
+
+	inline ~SudoSilentQueryRegion()
+	{
+		if (_entered)
+			sudo_silent_query_region_leave();
 	}
 };
 #endif

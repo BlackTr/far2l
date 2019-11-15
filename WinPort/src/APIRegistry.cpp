@@ -5,16 +5,21 @@
 #include <iostream>
 #include <fstream>
 #include <mutex>
-
-#include <wx/wx.h>
-#include <wx/display.h>
+#include <atomic>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <assert.h>
 
 #include "WinCompat.h"
 #include "WinPort.h"
 #include "WinPortHandle.h"
 #include "PathHelpers.h"
 #include <utils.h>
+#include <os_call.hpp>
 
+static std::atomic<int>	s_reg_wipe_count(0);
 
 struct WinPortHandleReg : WinPortHandle
 {
@@ -31,7 +36,7 @@ struct WinPortHandleReg : WinPortHandle
 
 static std::string GetRegistrySubroot(const char *sub)
 {
-	static std::string s_root = InMyProfile();
+	static std::string s_root = InMyConfig("REG");
 	std::string rv = s_root;
 	rv+= sub;
 	return rv;
@@ -40,17 +45,17 @@ static std::string GetRegistrySubroot(const char *sub)
 static std::string HKDir(HKEY hKey)
 {
 	if ((ULONG_PTR)hKey == (ULONG_PTR)HKEY_CLASSES_ROOT)
-		return GetRegistrySubroot("/hklm/software/classes"); else
+		return GetRegistrySubroot("/HKLM/software/classes"); else
 	if ((ULONG_PTR)hKey == (ULONG_PTR)HKEY_CURRENT_USER)
-		return GetRegistrySubroot("/hku/c"); else
+		return GetRegistrySubroot("/HKU/c"); else
 	if ((ULONG_PTR)hKey == (ULONG_PTR)HKEY_LOCAL_MACHINE)
-		return GetRegistrySubroot("/hklm"); else
+		return GetRegistrySubroot("/HKLM"); else
 	if ((ULONG_PTR)hKey == (ULONG_PTR)HKEY_USERS)
-		return GetRegistrySubroot("/hku"); else
+		return GetRegistrySubroot("/HKU"); else
 	if ((ULONG_PTR)hKey == (ULONG_PTR)HKEY_PERFORMANCE_DATA)
-		return GetRegistrySubroot("/pd"); else
+		return GetRegistrySubroot("/PD"); else
 	if ((ULONG_PTR)hKey == (ULONG_PTR)HKEY_PERFORMANCE_TEXT)
-		return GetRegistrySubroot("/pt");
+		return GetRegistrySubroot("/PT");
 
 	std::string out;
 	AutoWinPortHandle<WinPortHandleReg> wph(hKey);
@@ -60,20 +65,85 @@ static std::string HKDir(HKEY hKey)
 	return out;
 }
 
+static int try_open_rw(const char *path)
+{
+	return open(path, O_RDWR);
+}
+
+static std::string LitterFile(const char *path)
+{
+	int fd = os_call_int(try_open_rw, path);
+	if (fd == -1) {
+		if (errno != ENOENT)
+			perror("LitterFile - open");
+		return path;
+	}
+
+	struct stat s{};
+	if (fstat(fd, &s) != 0)
+		s.st_size = 0x10000;
+
+	srand(fd ^ time(nullptr));
+
+	unsigned char garbage[128];
+	for (off_t i = 0; i < s.st_size;) {
+		const size_t piece = (s.st_size - i > (off_t)sizeof(garbage))
+			? sizeof(garbage) : (size_t) (s.st_size - i);
+		for (size_t j = 0; j < piece; ++j) {
+			garbage[j] = rand() % 0xff;
+		}
+
+		if (os_call_v<ssize_t, -1>(write, fd,
+			(const void *)&garbage[0], piece) != (ssize_t)piece) {
+			perror("LitterFile - write");
+		}
+		i+= piece;
+	}
+	//fprintf(stderr, "LitterFile - WRITTEN: '%s'\n", path);
+	os_call_int(fsync, fd);
+	os_call_int(close, fd);
+
+	std::string garbage_path = path;
+	size_t p = garbage_path.rfind('/');
+	if (p != std::string::npos) {
+		size_t l = garbage_path.size();
+		garbage_path.resize(p + 1);
+		for (size_t i = p + 1; i < l; ++i) {
+			garbage_path+= 'a' + (rand() % ('z' - 'a' + 1));
+		}
+	}
+	if (os_call_int(rename, path, garbage_path.c_str()) == 0) {
+		//fprintf(stderr, "LitterFile - RENAMED: '%s' -> '%s'\n", path, garbage_path.c_str());
+		return garbage_path;
+	}
+
+	return path;
+}
+
+static int RemoveRegistryFile(const char *path)
+{
+	if (s_reg_wipe_count) {
+		std::string garbage_path = LitterFile(path);
+		garbage_path = LitterFile(garbage_path.c_str());
+		garbage_path = LitterFile(garbage_path.c_str());
+		return os_call_int(remove, garbage_path.c_str());
+	}
+	return os_call_int(remove, path);
+}
 
 LONG RegXxxKeyEx(
 	bool create,
 	HKEY    hKey,
 	LPCWSTR lpSubKey,
 	PHKEY   phkResult,
-	LPDWORD lpdwDisposition = NULL)
+	LPDWORD lpdwDisposition = nullptr)
 {
 	std::string dir = HKDir(hKey);
 	if (dir.empty())
 		return ERROR_INVALID_HANDLE;
 
 	AppendAndRectifyPath(dir, WINPORT_REG_DIV_KEY, lpSubKey);
-	struct stat s = {0};
+	struct stat s{};
 	if (stat(dir.c_str(), &s)==-1) {
 		if (!create) {
 			//fprintf(stderr, "RegXxxKeyEx: can't open %s\n", dir.c_str());
@@ -95,23 +165,13 @@ LONG RegXxxKeyEx(
 			*lpdwDisposition = REG_OPENED_EXISTING_KEY;
 
 
-	WinPortHandleReg *rd = new WinPortHandleReg;
+	WinPortHandleReg *rd = new(std::nothrow) WinPortHandleReg;
 	if (!rd)
 		return ERROR_OUTOFMEMORY;
 	rd->dir.swap(dir);
 	
 	*phkResult = WinPortHandle_Register(rd);
 	return ERROR_SUCCESS;
-}
-
-static bool StringStartsWith(const char *str, const char *beginning)
-{
-	for (;;) {
-		if (!*beginning) return true;
-		if (*str!=*beginning) return false;
-		++str;
-		++beginning;
-	}
 }
 
 static std::string LookupIndexedRegItem(const std::string &root, const char *div,  DWORD index)
@@ -142,7 +202,7 @@ static std::string LookupIndexedRegItem(const std::string &root, const char *div
 		for (DWORD i = 0;;) {
 			dirent *de = readdir(d);
 			if (!de) break;
-			if (StringStartsWith(de->d_name, div + 1))  {
+			if (StrStartsFrom(de->d_name, div + 1))  {
 				if (i==index) {
 					out = de->d_name;
 					break;
@@ -156,6 +216,283 @@ static std::string LookupIndexedRegItem(const std::string &root, const char *div
 #endif
 	return out;
 }
+
+
+
+void RegEscape(std::string &s)
+{
+	for (std::string::iterator i = s.begin(); i != s.end(); ++i) {
+		if (*i == '\\' || *i == '\r' || *i == '\n' || *i == 0) {
+			 i = s.insert(i, '\\');
+			 ++i;
+			 switch (*i) {
+				 case '\\': /*i = '\\';*/ break;
+				 case '\r': *i = 'r'; break;
+				 case '\n': *i = 'n'; break;
+				 case 0: 
+					*i = '0';
+					if (i + 1 != s.end()) {
+						++i;
+						i = s.insert(i, '\n');
+					}
+				 break;
+				 default: abort();
+			 }
+		}
+	}
+}
+	
+void RegUnescape(std::string &s)
+{
+	for (std::string::iterator i = s.begin(); i != s.end(); ) {
+		if (*i == '\\') {
+			i = s.erase(i);
+			if (i == s.end()) break;
+			switch (*i) {
+				case '\\': /*i = '\\';*/ break;
+				case 'r': *i = '\r'; break;
+				case 'n': *i = '\n'; break;
+				case '0': *i = 0; break;
+				default: 
+					fprintf(stderr, "RegUnescape: unexpected escape code 0x%x\n", (unsigned int)(unsigned char)*i);
+			}
+			++i;
+		} else if (*i == '\r' || *i == '\n' || *i == 0) {
+			i = s.erase(i);
+		} else
+			++i;
+	}
+}
+	
+	
+static LONG RegValueDeserializeWide(const char *s, size_t l, LPBYTE lpData, LPDWORD lpcbData)
+{
+	DWORD cbData = 0;
+	std::string us(s, l);
+	RegUnescape(us);
+	std::wstring ws;
+	StrMB2Wide(us, ws);
+	size_t total_len = ws.size() * sizeof(wchar_t);
+	if(lpcbData) {
+		cbData = *lpcbData;
+		*lpcbData = total_len;
+	}
+	if (lpData) {
+		if (total_len > cbData)
+			return ERROR_MORE_DATA;
+
+		if (total_len + sizeof(wchar_t) <= cbData)
+			memcpy(lpData, ws.c_str(), total_len + sizeof(wchar_t)); //ensure null if have enough place
+		else
+			memcpy(lpData, ws.c_str(), total_len);
+	}
+	return ERROR_SUCCESS;
+}
+	
+static LONG RegValueDeserializeMB(const char *s, size_t l, LPBYTE lpData, LPDWORD lpcbData)
+{
+	DWORD cbData = 0;
+	std::string us(s, l);
+	RegUnescape(us);
+	size_t total_len = us.size();
+	if(lpcbData) {
+		cbData = *lpcbData;
+		*lpcbData = total_len;
+	}
+	if (lpData) {
+		if (total_len > cbData)
+			return ERROR_MORE_DATA;
+		if (total_len + 1 <= cbData)
+			memcpy(lpData, us.c_str(), total_len + 1); //ensure null if have enough place
+		else
+			memcpy(lpData, us.c_str(), total_len);
+	}
+	return ERROR_SUCCESS;
+}
+
+inline void dosscanf(const char *s, unsigned int *var)
+{ sscanf(s, "%x", var); }
+
+inline void dosscanf(const char *s, unsigned long long *var)
+{ sscanf(s, "%llx", var); }
+
+template <class INT_T>
+	static LONG RegValueDeserializeINT(const char *s, LPBYTE lpData, LPDWORD lpcbData)
+{
+	DWORD cbData = 0;
+	if(lpcbData) {
+		cbData = *lpcbData;
+		*lpcbData = sizeof(INT_T);
+	}
+	if (lpData) {
+		if (cbData < sizeof(INT_T))
+			return ERROR_MORE_DATA;
+		dosscanf(s, (INT_T *)lpData);
+	}
+	return ERROR_SUCCESS;
+}
+
+static LONG RegValueDeserializeBinary(const char *s, LPBYTE lpData, LPDWORD lpcbData)
+{
+	DWORD cbData = 0;
+	if(lpcbData) {
+		cbData = *lpcbData;
+		*lpcbData = 0;
+	}
+	for (;;) {
+		while (s[0]=='\n' || s[0]=='\r' || s[0]==' ') ++s;
+		if (!s[0] || !s[1]) break;
+		if (lpData && *lpcbData < cbData) {
+			char tmp[] = {s[0], s[1], 0};
+			unsigned int v = 0;
+			sscanf(tmp, "%x", &v);
+			lpData[*lpcbData] = (BYTE)v;
+		}
+		(*lpcbData)++;
+		s+= 2;
+	}
+	return (!lpData || *lpcbData <= cbData) ? ERROR_SUCCESS : ERROR_MORE_DATA;
+}
+
+static LONG RegValueDeserialize(const std::string &tip, const std::string &s, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
+{
+	static_assert(sizeof(DWORD) == sizeof(unsigned int ), "bad DWORD size");
+	static_assert(sizeof(DWORD64) == sizeof(unsigned long long), "bad DWORD64 size");
+
+	if(lpData && !lpcbData) {
+		return ERROR_INVALID_PARAMETER;
+	}
+				
+	if ( tip == "DWORD") {
+		if (lpType)
+			*lpType = REG_DWORD;
+		return RegValueDeserializeINT<unsigned int> (s.c_str(), lpData, lpcbData);
+	}
+		
+	if ( tip == "QWORD") {
+		if (lpType)
+			*lpType = REG_QWORD;
+		return RegValueDeserializeINT<unsigned long long> (s.c_str(), lpData, lpcbData);
+	}
+
+	if ( tip == "SZ") {
+		if (lpType)
+			*lpType = REG_SZ;
+		return RegValueDeserializeWide(s.c_str(), s.size(), lpData, lpcbData);
+	}
+		
+	if ( tip == "MULTI_SZ") {
+		if (lpType)
+			*lpType = REG_MULTI_SZ;
+		return RegValueDeserializeWide(s.c_str(), s.size(), lpData, lpcbData);
+	}
+		
+	if ( tip == "EXPAND_SZ") {
+		if (lpType)
+			*lpType = REG_EXPAND_SZ;
+		return RegValueDeserializeWide(s.c_str(), s.size(), lpData, lpcbData);
+	}
+
+	if ( tip == "SZ_MB") {
+		if (lpType)
+			*lpType = REG_SZ_MB;
+		return RegValueDeserializeMB(s.c_str(), s.size(), lpData, lpcbData);
+	}
+
+	if ( tip == "MULTI_SZ_MB") {
+		if (lpType)
+			*lpType = REG_MULTI_SZ_MB;
+		return RegValueDeserializeMB(s.c_str(), s.size(), lpData, lpcbData);
+	}
+		
+	if ( tip == "EXPAND_SZ_MB") {
+		if (lpType)
+			*lpType = REG_EXPAND_SZ_MB;
+		return RegValueDeserializeMB(s.c_str(), s.size(), lpData, lpcbData);
+	}
+	
+	if (lpType) {
+		*lpType = REG_BINARY;
+		if ( tip != "BINARY") {
+			sscanf(tip.c_str(), "%x", (unsigned int *)lpType);
+		}
+	}
+		
+	return RegValueDeserializeBinary(s.c_str(), lpData, lpcbData);
+}
+	
+static void RegValueSerializeBinary(std::ofstream &os, const BYTE *lpData, DWORD cbData)
+{
+	os << std::hex;
+	char tmp[8];
+	for (DWORD i = 0; i < cbData; ++i) {
+		if (i != 0 && (i % 16) == 0) {
+			os << std::endl;
+		}
+		sprintf(tmp, "%02x ", (unsigned int)(unsigned char)lpData[i]);
+		os << tmp;
+	}
+}
+
+static void RegValueSerialize(std::ofstream &os, DWORD Type, const BYTE *lpData, DWORD cbData)
+{
+	static_assert(sizeof(DWORD) == sizeof(unsigned int ), "bad DWORD size");
+	static_assert(sizeof(DWORD64) == sizeof(unsigned long long), "bad DWORD64 size");
+
+	switch (Type) {
+		case REG_DWORD: {
+			if (cbData != sizeof(DWORD))
+				fprintf(stderr, "RegValueSerialize: DWORD but cbData=%u\n", cbData);
+
+			os << "DWORD" << std::endl << std::hex << (unsigned int)*(const DWORD *)lpData;
+		} break;
+
+		case REG_QWORD: {
+			if (cbData != sizeof(DWORD64))
+				fprintf(stderr, "RegValueSerialize: QWORD but cbData=%u\n", cbData);
+				
+			os << "QWORD" << std::endl << std::hex << (unsigned long long)*(const DWORD64 *)lpData;
+		} break;
+				
+		case REG_SZ: case REG_MULTI_SZ: case REG_EXPAND_SZ: {
+			if (cbData % sizeof(wchar_t))
+				fprintf(stderr, "RegValueSerialize: WS(%u) but cbData=%u\n", Type, cbData);
+
+			std::string s;
+			StrWide2MB( std::wstring((const wchar_t *)lpData, cbData / sizeof(wchar_t)), s);
+			RegEscape(s);
+			
+			switch (Type) {
+				case REG_SZ: os << "SZ" << std::endl << s; break;
+				case REG_MULTI_SZ: os << "MULTI_SZ" << std::endl  << s; break;
+				case REG_EXPAND_SZ: os << "EXPAND_SZ" << std::endl << s; break;
+				default: abort();
+			}
+		} break;
+		
+		case REG_SZ_MB: case REG_MULTI_SZ_MB: case REG_EXPAND_SZ_MB: {
+			std::string s((const char *)lpData, cbData);
+			RegEscape(s);
+			
+			switch (Type) {
+				case REG_SZ_MB: os << "SZ_MB" << std::endl << s; break;
+				case REG_MULTI_SZ_MB: os << "MULTI_SZ_MB" << std::endl << s; break;
+				case REG_EXPAND_SZ_MB: os << "EXPAND_SZ_MB" << std::endl << s; break;
+			}				
+		} break;
+		
+		case REG_BINARY: {
+			os << "BINARY" << std::endl;
+			RegValueSerializeBinary(os, lpData, cbData);
+		} break;
+
+		default: {
+			os << std::hex << Type << std::endl;
+			RegValueSerializeBinary(os, lpData, cbData);
+		}
+	}
+}
+	
 
 extern "C" {
 	LONG WINPORT(RegOpenKeyEx) (
@@ -212,11 +549,12 @@ extern "C" {
 			if (name.empty())
 				break;
 			std::string file = dir + "/" + name;
-			if (remove(file.c_str())) return ERROR_PATH_NOT_FOUND;
+			if (RemoveRegistryFile(file.c_str()) != 0)
+				return ERROR_PATH_NOT_FOUND;
 		}
 
 		if (rmdir(dir.c_str())!=0) {
-			struct stat s = {0};
+			struct stat s{};
 			if (stat(dir.c_str(), &s)==0)
 				return ERROR_DIR_NOT_EMPTY;
 		}
@@ -236,7 +574,7 @@ extern "C" {
 		std::string path = wph->dir; 
 		path+= WINPORT_REG_DIV_VALUE;
 		if (lpValueName) path+= Wide2MB(lpValueName);
-		return (remove(path.c_str())==0) ? ERROR_SUCCESS : ERROR_PATH_NOT_FOUND;
+		return (remove(path.c_str()) == 0) ? ERROR_SUCCESS : ERROR_PATH_NOT_FOUND;
 	}
 
 
@@ -253,12 +591,13 @@ extern "C" {
 	{
 		const std::string &root = HKDir(hKey);
 		if (root.empty()) {
-			fprintf(stderr, "RegEnumKeyEx: bad handle - %p\n", hKey);
+			//fprintf(stderr, "RegEnumKeyEx: bad handle - %p\n", hKey);
 			return ERROR_INVALID_HANDLE;
 		}
 		std::string name = LookupIndexedRegItem(root, WINPORT_REG_DIV_KEY,  dwIndex);
-		if (name.empty()) 
+		if (name.empty()) {
 			return ERROR_NO_MORE_ITEMS;
+		}
 
 		name.erase(0, strlen(WINPORT_REG_DIV_KEY)-1);
 
@@ -282,13 +621,14 @@ extern "C" {
 		)
 	{
 		DWORD reserved = 0;
-		return WINPORT(RegEnumKeyEx)( hKey, dwIndex, lpName, &cchName, &reserved, NULL, NULL, NULL);
+		return WINPORT(RegEnumKeyEx)( hKey, dwIndex, lpName, &cchName, &reserved, nullptr, nullptr, nullptr);
 	}
+
 
 	LONG CommonQueryValue(const std::string &root, const std::string &prefixed_name,
 		LPWSTR  lpValueName, LPDWORD lpcchValueName, LPDWORD lpType, LPBYTE  lpData, LPDWORD lpcbData)
 	{
-		std::string name, type, value;
+		std::string name, tip, s;
 		std::ifstream is;
 		std::string path = root; 
 		path+= GOOD_SLASH;
@@ -299,9 +639,10 @@ extern "C" {
 			//fprintf(stderr, "RegQueryValue: not found %s\n", path.c_str());
 			return ERROR_FILE_NOT_FOUND;
 		}
+		
 		getline (is, name);
-		getline (is, type);
-		getline (is, value);
+		getline (is, tip);
+		getline (is, s, (char)0);
 		//fprintf(stderr, "RegQueryValue: '%s' '%s' '%s' %p\n", prefixed_name.c_str(), type.c_str(), value.c_str(), lpData);
 		LONG out = ERROR_SUCCESS;
 		const std::wstring &namew = StrMB2Wide(name);
@@ -314,36 +655,8 @@ extern "C" {
 		if (lpcchValueName)
 			*lpcchValueName = namew.size();
 		
-		DWORD tip = (DWORD)atoi(type.c_str());
-		if (lpType) *lpType = tip;
-		
-		if (lpData && lpcbData) {
-			for (DWORD i = 0;;++i)
-			{
-				if (i * 2 >= value.size())
-					break;
-				if (i>=*lpcbData) {
-					//fprintf(stderr, "RegQueryValue: '%s' '%s' '%s' SIZE %u  MORE_DATA\n", prefixed_name.c_str(), type.c_str(), value.c_str(),*lpcbData);
-					out = ERROR_MORE_DATA;
-					break;
-				}
-
-				lpData[i] = Hex2Byte(value.c_str() + i * 2);
-			}			
-		}
-		if (lpcbData)
-			*lpcbData = value.size()/2;
-		
-		//if (!lpData) {while (!IsDebuggerPresent())Sleep(1000); DebugBreak();}
-		/*
-		if (tip==REG_SZ || tip==REG_MULTI_SZ|| tip==REG_EXPAND_SZ)
-			fprintf(stderr, "RegQueryValue: '%s' '%s' '%s' SIZE %u '%ls'\n", prefixed_name.c_str(), type.c_str(), value.c_str(),*lpcbData, (WCHAR*)lpData);
-		else if (lpData)
-			fprintf(stderr, "RegQueryValue: '%s' '%s' '%s' SIZE %u 0x%x\n", prefixed_name.c_str(), type.c_str(), value.c_str(), *lpcbData, *lpData);
-		else 
-			fprintf(stderr, "RegQueryValue: '%s' '%s' '%s' SIZE %u \n", prefixed_name.c_str(), type.c_str(), value.c_str(), *lpcbData);
-		*/
-		return out;
+		LONG out2 = RegValueDeserialize(tip, s, lpType, lpData, lpcbData);
+		return (out2 == ERROR_SUCCESS) ? out : out2;
 	}
 
 	LONG WINPORT(RegEnumValue)( HKEY    hKey,
@@ -376,7 +689,7 @@ extern "C" {
 		std::string prefixed_name = WINPORT_REG_DIV_VALUE + 1;
 		prefixed_name+= Wide2MB(lpValueName);
 		return CommonQueryValue(root, prefixed_name,
-			NULL, NULL, lpType, lpData, lpcbData);
+			nullptr, nullptr, lpType, lpData, lpcbData);
 	}
 
 	LONG WINPORT(RegSetValueEx)(
@@ -393,23 +706,19 @@ extern "C" {
 			fprintf(stderr, "RegSetValueEx: bad handle - %p\n", hKey);
 			return ERROR_INVALID_HANDLE;
 		}
-		std::string path = wph->dir; 
-		path+= WINPORT_REG_DIV_VALUE;
-		path+= Wide2MB(lpValueName);
+		std::string s = wph->dir; 
+		s+= WINPORT_REG_DIV_VALUE;
+		s+= Wide2MB(lpValueName);
 		//fprintf(stderr, "RegSetValue type=%u cbData=%u\n", dwType, cbData);
 		if  (dwType==REG_DWORD && cbData==8)
 		{
 			*(volatile int*)100 = 200;
 		}
 		std::ofstream os;
-		os.open(path.c_str());
-		std::string name = Wide2MB(lpValueName);
-		os << name << std::endl;
-		os << dwType << std::endl;
-		for (DWORD i = 0; i < cbData; ++i) {
-			if (lpData[i] < 0x10) os << '0';
-			os << std::hex << (unsigned int)lpData[i];
-		}
+		os.open(s.c_str());
+		Wide2MB(lpValueName, s);
+		os << s << std::endl;
+		RegValueSerialize(os, dwType, lpData, cbData);
 		os << std::endl;
 		return ERROR_SUCCESS;
 	}
@@ -437,7 +746,7 @@ extern "C" {
 		
 		if (lpcMaxSubKeyLen) *lpcMaxSubKeyLen = 0;
 		if (lpcMaxClassLen) {
-			if (lpClass && lpcMaxClassLen ) *lpClass = 0;
+			if (lpClass) *lpClass = 0;
 			*lpcMaxClassLen = 0;
 		}
 		if (lpcMaxValueNameLen) *lpcMaxValueNameLen = 0;
@@ -447,7 +756,7 @@ extern "C" {
 		
 		for (DWORD i = 0;;++i) {
 			DWORD namelen = 0, classlen = 0;
-			LONG r = WINPORT(RegEnumKeyEx)( hKey, i, NULL, &namelen, NULL, NULL, &classlen, NULL);
+			LONG r = WINPORT(RegEnumKeyEx)( hKey, i, nullptr, &namelen, nullptr, nullptr, &classlen, nullptr);
 			if (r != ERROR_SUCCESS && r != ERROR_MORE_DATA) {
 				if (lpcSubKeys) *lpcSubKeys = i;
 				break;
@@ -458,7 +767,7 @@ extern "C" {
 		
 		for (DWORD i = 0;;++i) {
 			DWORD  namelen = 0, datalen = 0;
-			LONG r = WINPORT(RegEnumValue)(hKey, i, NULL, &namelen, NULL, NULL, NULL, &datalen);
+			LONG r = WINPORT(RegEnumValue)(hKey, i, nullptr, &namelen, nullptr, nullptr, nullptr, &datalen);
 			if (r != ERROR_SUCCESS && r != ERROR_MORE_DATA) {
 				if (lpcValues) *lpcValues = i;
 				break;
@@ -470,6 +779,17 @@ extern "C" {
 		return ERROR_SUCCESS;
 	}
 
+
+	WINPORT_DECL(RegWipeBegin, VOID, ())
+	{
+		++s_reg_wipe_count;
+	}
+	
+	WINPORT_DECL(RegWipeEnd, VOID, ())
+	{
+		--s_reg_wipe_count;
+		assert(s_reg_wipe_count >= 0);
+	}
 
 	void WinPortInitRegistry()
 	{

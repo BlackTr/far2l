@@ -1,4 +1,4 @@
-﻿m4_include(`farversion.m4')m4_dnl
+m4_include(`farversion.m4')m4_dnl
 .Language=Hungarian,Hungarian (Magyar)
 .Options CtrlColorChar=\
 .Options CtrlStartPosChar=^<wrap>
@@ -7,7 +7,8 @@
 $^#Fájl- és archívumkezelő program#
 `$^#'FULLVERSIONNOBRACES`#'
 $^#Copyright (C) 1996-2000 Eugene Roshal#
-`$^#Copyright (C)' COPYRIGHTYEARS `FAR Group#'
+$^#Copyright (C) 2000-2016 FAR Group
+`$^#Copyright (C)' COPYRIGHTYEARS `FAR People'
 $^(help file last translated for build 882)
    ~A súgó betűrendes tartalomjegyzéke~@Index@
    ~A súgó használata~@Help@
@@ -2218,7 +2219,7 @@ jeleníthet meg.
      $g - > karakter
      $h - törli az előző karaktert
      $l - < karakter
-     $n - az aktuális meghajtó betűjele
+     $## - ## character if user is root, otherwise $
      $p - az aktuális meghajtó és elérési út
      $q - = karakter
      $s - szóköz
@@ -2230,9 +2231,8 @@ jeleníthet meg.
 
    Példák:
 
-   1. ^<wrap>A #[%COMPUTERNAME%]$S$P$G# formátumú prompt a számítógép nevét,
-az aktuális meghajtó betűjelét és az elérési utat tartalmazza (ehhez a
-%COMPUTERNAME% környezeti változónak is definiáltnak kell lennie).
+   1. ^<wrap>A #[%HOSTNAME%]$S$P$### formátumú prompt a számítógép nevét,
+az aktuális meghajtó betűjelét és az elérési utat tartalmazza.
 
    2. ^<wrap>A #[$T$H$H$H]$S$P$G# formátumú promptban az aktuális idő
 (óó:pp) után a meghajtó betűjele és az elérési út áll.

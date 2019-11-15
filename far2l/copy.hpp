@@ -52,26 +52,25 @@ enum COPY_CODES
 
 enum COPY_FLAGS
 {
-	FCOPY_COPYTONUL               = 0x00000001, // Признак копирования в NUL
-	FCOPY_CURRENTONLY             = 0x00000002, // Только текщий?
-	FCOPY_ONLYNEWERFILES          = 0x00000004, // Copy only newer files
-	FCOPY_OVERWRITENEXT           = 0x00000008, // Overwrite all
-	FCOPY_LINK                    = 0x00000010, // создание линков
-	FCOPY_MOVE                    = 0x00000040, // перенос/переименование
-	FCOPY_DIZREAD                 = 0x00000080, //
-	FCOPY_COPYSECURITY            = 0x00000100, // [x] Copy access rights
-	FCOPY_NOSHOWMSGLINK           = 0x00000200, // не показывать месаги при ликовании
-	FCOPY_VOLMOUNT                = 0x00000400, // операция монтированния тома
-	FCOPY_STREAMSKIP              = 0x00000800, // потоки
-	FCOPY_STREAMALL               = 0x00001000, // потоки
-	FCOPY_SKIPSETATTRFLD          = 0x00002000, // больше не пытаться ставить атрибуты для каталогов - когда нажали Skip All
-	FCOPY_COPYSYMLINKCONTENTS     = 0x00004000, // Копировать содержимое симолических связей?
-	FCOPY_COPYPARENTSECURITY      = 0x00008000, // Накладывать родительские права, в случае если мы не копируем права доступа
-	FCOPY_LEAVESECURITY           = 0x00010000, // Move: [?] Ничего не делать с правами доступа
-	FCOPY_DECRYPTED_DESTINATION   = 0x00020000, // для криптованных файлов - расшифровывать...
-	FCOPY_WRITETHROUGH            = 0x00040000, // disable write cache
-	FCOPY_COPYLASTTIME            = 0x10000000, // При копировании в несколько каталогов устанавливается для последнего.
-	FCOPY_UPDATEPPANEL            = 0x80000000, // необходимо обновить пассивную панель
+	FCOPY_COPYTONUL               	= 0x00000001, // Признак копирования в NUL
+	FCOPY_CURRENTONLY             	= 0x00000002, // Только текщий?
+	FCOPY_ONLYNEWERFILES          	= 0x00000004, // Copy only newer files
+	FCOPY_OVERWRITENEXT           	= 0x00000008, // Overwrite all
+	FCOPY_LINK                    	= 0x00000010, // создание линков
+	FCOPY_MOVE                    	= 0x00000040, // перенос/переименование
+	FCOPY_DIZREAD                 	= 0x00000080, //
+	FCOPY_COPYACCESSMODE          	= 0x00000100, // [x] Copy files access mode
+	FCOPY_NOSHOWMSGLINK           	= 0x00000200, // не показывать месаги при ликовании
+	FCOPY_VOLMOUNT                	= 0x00000400, // операция монтированния тома
+	FCOPY_STREAMSKIP              	= 0x00000800, // потоки
+	FCOPY_STREAMALL               	= 0x00001000, // потоки
+	FCOPY_SKIPSETATTRFLD          	= 0x00002000, // больше не пытаться ставить атрибуты для каталогов - когда нажали Skip All
+	FCOPY_COPYSYMLINKCONTENTS     	= 0x00004000, // Copy symbolics links content instead of making new links
+	FCOPY_COPYSYMLINKCONTENTSOUTER	= 0x00008000, // Copy remote (to this copy operation) symbolics links content, make relative links for local ones
+	FCOPY_WRITETHROUGH            	= 0x00040000, // disable write cache
+	FCOPY_COPYXATTR               	= 0x00080000, // copy extended attributes
+	FCOPY_COPYLASTTIME            	= 0x10000000, // При копировании в несколько каталогов устанавливается для последнего.
+	FCOPY_UPDATEPPANEL            	= 0x80000000, // необходимо обновить пассивную панель
 };
 
 class ShellCopy
@@ -80,14 +79,14 @@ class ShellCopy
 		Panel *SrcPanel,*DestPanel;
 		int SrcPanelMode,DestPanelMode;
 		int SrcDriveType,DestDriveType;
-		FARString strSrcDriveRoot;
-		FARString strDestDriveRoot;
 		FARString strDestFSName;
 		char   *sddata; // Security
 		DizList DestDiz;
 		FARString strDestDizPath;
 		char *CopyBuffer, *CopyBufferBase;
 		int CopyBufferSize;
+		clock_t ProgressUpdateTime;              // Last progress bar update time
+		int ProgressUpdateThreshold;    // minimum progress bar update interval, msec
 		FARString strCopiedName;
 		FARString strRenamedName;
 		FARString strRenamedFilesPath;
@@ -109,6 +108,15 @@ class ShellCopy
 		                            const FAR_FIND_DATA_EX &SrcData,
 		                            FARString &strDest,
 		                            int KeepPathPos, int Rename);
+		COPY_CODES ShellCopyOneFileWithRoot(const wchar_t *Root, const wchar_t *Src,
+		                            const FAR_FIND_DATA_EX &SrcData,
+		                            FARString &strDest,
+		                            int KeepPathPos, int Rename);
+		COPY_CODES ShellCopyOneFileWithRootNoRetry(const wchar_t *Root, const wchar_t *Src,
+		                            const FAR_FIND_DATA_EX &SrcData,
+		                            FARString &strDest,
+		                            int KeepPathPos, int Rename);
+
 		COPY_CODES CheckStreams(const wchar_t *Src,const wchar_t *DestPath);
 		int  ShellCopyFile(const wchar_t *SrcName,const FAR_FIND_DATA_EX &SrcData,
 		                   FARString &strDestName,DWORD &DestAttr,int Append);
@@ -120,6 +128,10 @@ class ShellCopy
 		bool CalcTotalSize();
 		bool ShellSetAttr(const wchar_t *Dest,DWORD Attr);
 		void CheckUpdatePanel(); // выставляет флаг FCOPY_UPDATEPPANEL
+		
+		COPY_CODES DumbCopySymLink(const wchar_t *Target, const wchar_t *NewName, const FAR_FIND_DATA_EX &SrcData);
+		COPY_CODES CopySymLink(const wchar_t *Root, const wchar_t *ExistingName, 
+					const wchar_t *NewName, ReparsePointTypes LinkType, const FAR_FIND_DATA_EX &SrcData);
 	public:
 		ShellCopy(Panel *SrcPanel,int Move,int Link,int CurrentOnly,int Ask,
 		          int &ToPlugin, const wchar_t *PluginDestPath, bool ToSubdir=false);

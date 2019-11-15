@@ -63,8 +63,8 @@ static const FARString& GetFarTitleAddons()
 	if (bFirstRun)
 	{
 		bFirstRun = false;
-		strVer<<HIBYTE(LOWORD(FAR_VERSION))<<L"."<<LOBYTE(LOWORD(FAR_VERSION));
-		strBuild<<HIWORD(FAR_VERSION);
+		strVer << HIWORD(FAR_VERSION) << L"." << LOWORD(FAR_VERSION);
+		strBuild << MB2Wide(FAR_BUILD).c_str();
 	}
 
 	ReplaceStrings(strTitleAddons,L"%Ver",strVer,-1,true);
@@ -74,7 +74,7 @@ static const FARString& GetFarTitleAddons()
 	L"x64",
 #elif defined(__ppc64__)
 	L"ppc64",
-#elif defined(__arm64__)
+#elif defined(__arm64__) || defined(__aarch64__)
 	L"arm64",
 #elif defined(__arm__)
 	L"arm",
@@ -83,6 +83,14 @@ static const FARString& GetFarTitleAddons()
 #endif
 	-1,true);
 	ReplaceStrings(strTitleAddons,L"%Admin",Opt.IsUserAdmin?MSG(MFarTitleAddonsAdmin):L"",-1,true);
+
+	char hn[0x100] = {};
+	if (gethostname(hn, sizeof(hn) - 1) >= 0) {
+		ReplaceStrings(strTitleAddons,L"%Host", StrMB2Wide(hn).c_str(),-1,true);
+	}
+	const char *user = getenv("USER");
+	ReplaceStrings(strTitleAddons,L"%User", StrMB2Wide(user ? user : "").c_str(),-1,true);
+
 	RemoveTrailingSpaces(strTitleAddons);
 
 	return strTitleAddons;

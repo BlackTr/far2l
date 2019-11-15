@@ -95,6 +95,7 @@ struct AutoCompleteOptions
 	int ShowList;
 	int ModalList;
 	int AppendCompletion;
+	FARString Exceptions;
 };
 
 
@@ -168,6 +169,14 @@ struct CodeXLAT
 	// [0] "если предыдущий символ латинский"
 	// [1] "если предыдущий символ нелатинский символ"
 	// [2] "если предыдущий символ не рус/lat"
+};
+
+struct NotificationsOptions
+{
+	int OnFileOperation;
+	int OnConsole;
+
+	int OnlyIfBackground;
 };
 
 struct EditorOptions
@@ -389,10 +398,11 @@ struct TreeOptions
 struct CopyMoveOptions
 {
 	int WriteThrough;          // disable write caching
+	int CopyXAttr;             // copy extended attributes if any
+	int CopyAccessMode;        // copy files access mode
 	int CopyOpened;            // копировать открытые на запись файлы
 	int CopyShowTotal;         // показать общий индикатор копирования
 	int MultiCopy;             // "разрешить мультикопирование/перемещение/создание связей"
-	DWORD CopySecurityOptions; // для операции Move - что делать с опцией "Copy access rights"
 	int CopyTimeRule;          // $ 30.01.2001 VVM  Показывает время копирования,оставшееся время и среднюю скорость
 };
 
@@ -449,8 +459,6 @@ struct Options
 
 	int MultiMakeDir; // Опция создания нескольких каталогов за один сеанс
 
-	int UseRegisteredTypes;
-
 	int ViewerEditorClock;
 	int OnlyEditorViewerUsed; // =1, если старт был /e или /v
 	int SaveViewHistory;
@@ -458,6 +466,7 @@ struct Options
 
 	FARString strExternalEditor;
 	EditorOptions EdOpt;
+	NotificationsOptions NotifOpt;
 	FARString strExternalViewer;
 	ViewerOptions ViOpt;
 
@@ -495,6 +504,7 @@ struct Options
 	int FormatNumberSeparators;
 	int CleanAscii;
 	int NoGraphics;
+	int ConsolePaintSharp, ExclusiveCtrlLeft, ExclusiveCtrlRight, ExclusiveAltLeft, ExclusiveAltRight, ExclusiveWinLeft, ExclusiveWinRight;
 
 	Confirmation Confirm;
 	PluginConfirmation PluginConfirm;
@@ -585,23 +595,9 @@ struct Options
 	    1 - если установлен, то опрашивать все остальные при GetSubstName() */
 	int SubstNameRule;
 
-	/* $ 23.05.2001 AltF9
-	  + Opt.AltF9 Флаг позволяет выбрать механизм  работы комбинации Alt-F9
-	       (Изменение размера экрана) в оконном режиме. По умолчанию - 1.
-	    0 - использовать механизм, совместимый с FAR версии 1.70 beta 3 и
-	       ниже, т.е. переключение 25/50 линий.
-	    1 - использовать усовершенствованный механизм - окно FAR Manager
-	       будет переключаться с нормального на максимально доступный размер
-	       консольного окна и обратно.*/
-	int AltF9;
-
-	int ClearType;
-
 	int PgUpChangeDisk;
 	int ShowCheckingFile;
 	int CloseConsoleRule;
-	int CloseCDGate;       // автомонтирование CD
-	int UpdateEnvironment;
 
 	DWORD LCIDSort;
 	int RestoreCPAfterExecute;
@@ -614,6 +610,7 @@ struct Options
 	DWORD PluginMaxReadData;
 	int UseNumPad;
 	int ScanJunction;
+	int OnlyFilesSize;
 
 	DWORD ShowTimeoutDelFiles; // тайаут в процессе удаления (в ms)
 	DWORD ShowTimeoutDACLFiles;
@@ -642,7 +639,6 @@ struct Options
 	bool IsUserAdmin;
 	FARString strTitleAddons;
 
-	int ElevationMode;
 	BOOL WindowMode;
 };
 
@@ -659,6 +655,7 @@ void PluginsManagerSettings();
 void SetDizConfig();
 void ViewerConfig(ViewerOptions &ViOpt,bool Local=false);
 void EditorConfig(EditorOptions &EdOpt,bool Local=false);
+void NotificationsConfig(NotificationsOptions &NotifOpt);
 void ReadConfig();
 void SaveConfig(int Ask);
 void SetFolderInfoFiles();

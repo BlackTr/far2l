@@ -42,6 +42,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "message.hpp"
 #include "config.hpp"
 #include "strmix.hpp"
+#include "pathmix.hpp"
 #include "filestr.hpp"
 #include "interf.hpp"
 #include "lasterror.hpp"
@@ -58,7 +59,7 @@ const wchar_t LangFileMask[] = L"*.lng";
 Language Lang;
 Language OldLang;
 
-FILE* OpenLangFile(const wchar_t *Path,const wchar_t *Mask,const wchar_t *Language, FARString &strFileName, UINT &nCodePage, BOOL StrongLang,FARString *pstrLangName)
+static FILE* TryOpenLangFile(const wchar_t *Path,const wchar_t *Mask,const wchar_t *Language, FARString &strFileName, UINT &nCodePage, BOOL StrongLang,FARString *pstrLangName)
 {
 	strFileName.Clear();
 	FILE *LangFile=nullptr;
@@ -121,6 +122,16 @@ FILE* OpenLangFile(const wchar_t *Path,const wchar_t *Mask,const wchar_t *Langua
 	return(LangFile);
 }
 
+FILE* OpenLangFile(FARString strPath,const wchar_t *Mask,const wchar_t *Language, FARString &strFileName, UINT &nCodePage, BOOL StrongLang,FARString *pstrLangName)
+{
+	FILE* out = TryOpenLangFile(strPath, Mask, Language, strFileName, nCodePage, StrongLang, pstrLangName);
+	if (!out) {
+		if (TranslateFarString<TranslateInstallPath_Lib2Share>(strPath)) {
+			out = TryOpenLangFile(strPath, Mask, Language, strFileName, nCodePage, StrongLang, pstrLangName);
+		}
+	}
+	return out;
+}
 
 int GetLangParam(FILE *SrcFile,const wchar_t *ParamName,FARString *strParam1, FARString *strParam2, UINT nCodePage)
 {
@@ -210,7 +221,7 @@ int Select(int HelpLanguage,VMenu **MenuPtr)
 		if (!LangFile)
 			continue;
 
-		UINT nCodePage=CP_OEMCP;
+		UINT nCodePage=CP_UTF8;
 		OldGetFileFormat(LangFile, nCodePage, nullptr, false);
 		FARString strLangName, strLangDescr;
 
@@ -312,7 +323,7 @@ bool Language::Init(const wchar_t *Path, bool bUnicode, int CountNeed)
 	GuardLastError gle;
 	LastError = LERROR_SUCCESS;
 	m_bUnicode = bUnicode;
-	UINT nCodePage = CP_OEMCP;
+	UINT nCodePage = CP_UTF8;
 	//fprintf(stderr, "Opt.strLanguage=%ls\n", Opt.strLanguage.CPtr());
 	FARString strLangName=Opt.strLanguage;
 	FILE *LangFile=OpenLangFile(Path,LangFileMask,Opt.strLanguage,strMessageFile, nCodePage,FALSE, &strLangName);
@@ -357,6 +368,7 @@ bool Language::Init(const wchar_t *Path, bool bUnicode, int CountNeed)
 		}
 		else
 		{
+			DestLength = pack(WINPORT(WideCharToMultiByte)(CP_UTF8, 0, strDestStr, -1, nullptr, 0, nullptr, nullptr));
 			if (!(MsgListA = (char*)xf_realloc(MsgListA, (MsgSize+DestLength)*sizeof(char))))
 			{
 				fclose(LangFile);
@@ -364,7 +376,7 @@ bool Language::Init(const wchar_t *Path, bool bUnicode, int CountNeed)
 			}
 
 			*(int*)&MsgListA[MsgSize+DestLength-_PACK] = 0;
-			WINPORT(WideCharToMultiByte)(CP_OEMCP, 0, strDestStr, -1, MsgListA+MsgSize, DestLength, nullptr, nullptr);
+			WINPORT(WideCharToMultiByte)(CP_UTF8, 0, strDestStr, -1, MsgListA+MsgSize, DestLength, nullptr, nullptr);
 		}
 
 		MsgSize+=DestLength;
@@ -382,7 +394,7 @@ bool Language::Init(const wchar_t *Path, bool bUnicode, int CountNeed)
 	if (m_bUnicode)
 	{
 		wchar_t *CurAddr = MsgList;
-		MsgAddr = new wchar_t*[MsgCount];
+		MsgAddr = new(std::nothrow) wchar_t*[MsgCount];
 
 		if (!MsgAddr)
 		{
@@ -399,7 +411,7 @@ bool Language::Init(const wchar_t *Path, bool bUnicode, int CountNeed)
 	else
 	{
 		char *CurAddrA = MsgListA;
-		MsgAddrA = new char*[MsgCount];
+		MsgAddrA = new(std::nothrow) char*[MsgCount];
 
 		if (!MsgAddrA)
 		{
@@ -590,3 +602,4 @@ const char* Language::GetMsgA(int nID) const
 
 	return MsgAddrA[nID];
 }
+

@@ -1,6 +1,4 @@
 #include <time.h>
-#include <wx/wx.h>
-#include <wx/display.h>
 #include "WinCompat.h"
 #include "WinPort.h"
 #ifdef __APPLE__
@@ -51,7 +49,7 @@ static void TM2Systemtime(LPSYSTEMTIME lpSystemTime, const struct tm *ptm)
 	lpSystemTime->wMilliseconds = 0;
 }
 		
-static void Systemtime2TM2(const SYSTEMTIME *lpSystemTime, struct tm *ptm)
+static void Systemtime2TM(const SYSTEMTIME *lpSystemTime, struct tm *ptm)
 {
 	ptm->tm_sec = lpSystemTime->wSecond;
 	ptm->tm_min = lpSystemTime->wMinute;
@@ -94,10 +92,14 @@ WINPORT_DECL(FileTime_UnixToWin32, VOID, (struct timespec ts, FILETIME *lpFileTi
 WINPORT_DECL(FileTime_Win32ToUnix, VOID, (const FILETIME *lpFileTime, struct timespec *ts))
 {
 	if (!lpFileTime || !ts) return;
+	FILETIME ftm2 = {0};
+	if (!WINPORT(FileTimeToLocalFileTime)(lpFileTime, &ftm2))
+		return;
+
 	SYSTEMTIME sys_time = {};
-	WINPORT(FileTimeToSystemTime)(lpFileTime, &sys_time);
+	WINPORT(FileTimeToSystemTime)(&ftm2, &sys_time);
 	struct tm tm = {};	
-	Systemtime2TM2(&sys_time, &tm);
+	Systemtime2TM(&sys_time, &tm);
 	ts->tv_sec = mktime(&tm);
 	ts->tv_nsec = sys_time.wMilliseconds;
 	ts->tv_nsec*= 1000000;
@@ -109,10 +111,10 @@ WINPORT_DECL(SystemTimeToFileTime, BOOL, (const SYSTEMTIME *lpSystemTime, LPFILE
 
 	/* FIXME: normalize the TIME_FIELDS structure here */
 	/* No, native just returns 0 (error) if the fields are not */
-	if( lpSystemTime->wMilliseconds< 0 || lpSystemTime->wMilliseconds > 999 ||
-		lpSystemTime->wSecond < 0 || lpSystemTime->wSecond > 59 ||
-		lpSystemTime->wMinute < 0 || lpSystemTime->wMinute > 59 ||
-		lpSystemTime->wHour < 0 || lpSystemTime->wHour > 23 ||
+	if(     lpSystemTime->wMilliseconds > 999 ||
+		lpSystemTime->wSecond > 59 ||
+		lpSystemTime->wMinute > 59 ||
+		lpSystemTime->wHour > 23 ||
 		lpSystemTime->wMonth < 1 || lpSystemTime->wMonth > 12 ||
 		lpSystemTime->wDay < 1 ||
 		lpSystemTime->wDay > MonthLengths [ lpSystemTime->wMonth ==2 || IsLeapYear(lpSystemTime->wYear)] [ lpSystemTime->wMonth - 1] ||

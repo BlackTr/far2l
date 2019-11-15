@@ -53,6 +53,9 @@ enum
 	COLUMN_MINSIZEINDEX_MASK = 0x00000003,
 };
 
+std::string EscapeUnprintable(const std::string &str);
+std::string UnescapeUnprintable(const std::string &str);
+
 FARString &EscapeSpace(FARString &strStr);
 wchar_t* WINAPI InsertQuote(wchar_t *Str);
 FARString& InsertQuote(FARString& strStr);
@@ -86,11 +89,15 @@ uint64_t ConvertFileSizeString(const wchar_t *FileSizeStr);
 FARString &FormatNumber(const wchar_t *Src, FARString &strDest, int NumDigits=0);
 FARString &InsertCommas(uint64_t li, FARString &strDest);
 
-inline bool IsWordDiv(const wchar_t *WordDiv, wchar_t Chr) { return wcschr(WordDiv, Chr)!=nullptr; }
+inline bool IsWordDiv(const wchar_t *WordDiv, wchar_t Chr)
+	{ return wcschr(WordDiv, Chr) != nullptr; }
+
+inline bool IsWordDivSTNR(const wchar_t *WordDiv, wchar_t Chr)
+	{ return wcschr(WordDiv, Chr) != nullptr || wcschr(L" \t\n\r", Chr) != nullptr; }
 
 //   WordDiv  - набор разделителей слова в кодировке OEM
 // возвращает указатель на начало слова
-const wchar_t * const CalcWordFromString(const wchar_t *Str,int CurPos,int *Start,int *End,const wchar_t *WordDiv);
+const wchar_t * CalcWordFromString(const wchar_t *Str,int CurPos,int *Start,int *End,const wchar_t *WordDiv);
 
 wchar_t* WINAPI TruncStr(wchar_t *Str,int MaxLength);
 FARString& WINAPI TruncStr(FARString &strStr,int MaxLength);

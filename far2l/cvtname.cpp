@@ -42,120 +42,15 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "strmix.hpp"
 #include <set>
 
-#define IsColon(str)         (str == L':')
 #define IsDot(str)           (str == L'.')
-#define IsSlashForward(str)  (str == L'/')
-#define IsQuestion(str)      (str == L'?')
-
-enum PATH_PFX_TYPE
-{
-	PPT_NONE,
-	PPT_DRIVE,
-	PPT_ROOT,
-	PPT_PREFIX,
-	PPT_NT
-};
-
-PATH_PFX_TYPE Point2Root(LPCWSTR stPath, size_t& PathOffset)
-{
-	if (stPath)
-	{
-		PATH_PFX_TYPE nPrefix = PPT_NONE;
-		LPCWSTR pstPath=stPath;
-
-		//Skip root entry, network share, device, nt notation or symlink prefix: "\", "\\", "\\.\", "\\?\", "\??\"
-		//prefix "\" or "/"
-		if (IsSlash(*pstPath))
-		{
-			pstPath++;
-			nPrefix = PPT_ROOT;
-
-			//prefix "\"
-			if (IsSlashForward(pstPath[-1]))
-			{
-				//prefix "\\" - network
-				if (IsSlashForward(pstPath[0]))
-				{
-					pstPath++;
-					nPrefix = PPT_PREFIX;
-
-					//prefix "\\.\" - device
-					if (IsDot(pstPath[0]) && IsSlashForward(pstPath[1]))
-					{
-						pstPath += 2;
-					}
-					else
-					{
-						//prefix "\\?\" - nt notation
-						if (IsQuestion(pstPath[0]) && IsSlashForward(pstPath[1]))
-						{
-							pstPath += 2;
-							nPrefix = PPT_NT;
-
-							//prefix "\\?\UNC\" - nt notation (UNC)
-							if (!StrCmpN(pstPath, L"UNC/", 4))
-							{
-								pstPath += 4;
-							}
-						}
-					}
-				}
-				else
-				{
-					if (IsQuestion(pstPath[0]) && IsQuestion(pstPath[1]) && IsSlashForward(pstPath[2]))    //prefix "\??\" symlink
-					{
-						pstPath += 3;
-						nPrefix = PPT_NT;
-					};
-				}
-			}
-		}
-
-		//Skip path to next slash (or path end) if was "special" prefix
-		if (nPrefix == PPT_PREFIX || nPrefix == PPT_NT)
-		{
-			while (*pstPath)
-			{
-				if (IsSlash(*pstPath))
-				{
-					pstPath++;
-					break;
-				}
-
-				pstPath++;
-			}
-		}
-		else
-		{
-			//Skip logical drive letter name
-			if (pstPath[0] && IsColon(pstPath[1]))
-			{
-				pstPath += 2;
-				nPrefix = PPT_DRIVE;
-
-				//Skip root slash
-				if (IsSlash(*pstPath))
-				{
-					pstPath++;
-					nPrefix = PPT_PREFIX;
-				}
-			}
-		}
-
-		PathOffset=pstPath-stPath;
-		return (nPrefix);
-	}
-
-	return (PPT_NONE);
-}
 
 void MixToFullPath(FARString& strPath)
 {
 	//Skip all path to root (with slash if exists)
 	LPWSTR pstPath=strPath.GetBuffer();
-	size_t PathOffset=0;
-	Point2Root(pstPath,PathOffset);
-	pstPath+=PathOffset;
+	//size_t PathOffset=0;
+//	Point2Root(pstPath,PathOffset);
+//	pstPath+=PathOffset;
 
 	//Process "." and ".." if exists
 	for (int m = 0; pstPath[m];)
@@ -169,7 +64,7 @@ void MixToFullPath(FARString& strPath)
 			switch (pstPath[m + 1])
 			{
 					//fragment ".\"
-				case L'\\':
+				//case L'\\':
 					//fragment "./"
 				case L'/':
 				{
@@ -212,9 +107,14 @@ void MixToFullPath(FARString& strPath)
 							*pstDst = 0;
 						}
 						//fragment ".." at the end
-						else
+						else if (n > 0)
 						{
 							pstPath[n] = 0;
+						}
+						else
+						{//dont go to nowhere
+							pstPath[0] = GOOD_SLASH;
+							pstPath[1] = 0;
 						}
 
 						m = n;
@@ -229,10 +129,52 @@ void MixToFullPath(FARString& strPath)
 	}
 
 	strPath.ReleaseBuffer();
+
+	if (strPath.GetLength() > 1 && strPath[strPath.GetLength() - 1] == GOOD_SLASH)
+		strPath.SetLength(strPath.GetLength() - 1);// #249
 }
 
 bool MixToFullPath(LPCWSTR stPath, FARString& strDest, LPCWSTR stCurrentDir)
 {
+	if (stPath && *stPath == GOOD_SLASH) {
+		strDest = stPath;
+		MixToFullPath(strDest);
+		return true;
+	}
+
+	strDest.Clear();
+	
+	if (stCurrentDir && *stCurrentDir) {
+		strDest = stCurrentDir;
+	}
+	
+	if (strDest.IsEmpty()) {
+		apiGetCurrentDirectory(strDest);
+		if (strDest.IsEmpty()) { //wtf
+			strDest = L"." WGOOD_SLASH;
+		}
+	}
+	
+	if (strDest.At(strDest.GetLength() - 1) != GOOD_SLASH)
+		strDest+= GOOD_SLASH;
+		
+	if (stPath) {
+		while (stPath[0]=='.' && (!stPath[1] || stPath[1]==GOOD_SLASH)) {
+			++stPath;
+			if (*stPath==GOOD_SLASH)
+				++stPath;
+		}
+		strDest+= stPath;
+	}
+	
+	MixToFullPath(strDest);
+	return true;
+	
+	
+	
+	
+	
+	/*
 	size_t lPath=wcslen(NullToEmpty(stPath)),
 	       lCurrentDir=wcslen(NullToEmpty(stCurrentDir)),
 	       lFullPath=lPath+lCurrentDir;
@@ -320,7 +262,7 @@ bool MixToFullPath(LPCWSTR stPath, FARString& strDest, LPCWSTR stCurrentDir)
 		return true;
 	}
 
-	return false;
+	return false;*/
 }
 
 
@@ -330,9 +272,10 @@ bool MixToFullPath(LPCWSTR stPath, FARString& strDest, LPCWSTR stCurrentDir)
 */
 void ConvertNameToReal(const wchar_t *Src, FARString &strDest)
 {
+	char buf[PATH_MAX + 1];
+	std::string s = Wide2MB(Src);
 	if (*Src==GOOD_SLASH) {
-		std::string s = Wide2MB(Src), cutoff;
-		char buf[PATH_MAX + 1];
+		std::string cutoff;
 		for (;;) {
 			if (sdc_realpath(s.c_str(), buf)) {
 				buf[sizeof(buf)-1] = 0;
@@ -350,6 +293,26 @@ void ConvertNameToReal(const wchar_t *Src, FARString &strDest)
 			cutoff.insert(0, s.c_str() + p);
 			s.resize(p);
 		}
+	} else {
+		if (sdc_realpath(s.c_str(), buf)) {
+			if (strcmp(buf, s.c_str()) != 0) {
+				strDest = buf;
+				return;
+			}
+		} else {
+			ssize_t r = sdc_readlink(s.c_str(), buf, sizeof(buf) - 1);
+			if (r > 0 && r < (ssize_t)sizeof(buf) && buf[0]) {
+				buf[r] = 0;
+				if (buf[0] != GOOD_SLASH) {
+					strDest = s;
+					CutToSlash(strDest);
+					strDest+= buf;
+				} else
+					strDest = buf;
+				ConvertNameToFull(strDest);
+				return;
+			}
+		}
 	}
 	strDest = Src;
 }
@@ -362,7 +325,7 @@ FARString& PrepareDiskPath(FARString &strPath, bool CheckFullPath)
 
 	if (!strPath.IsEmpty())
 	{
-		if (strPath.At(1)==L':' || (strPath.At(0)==L'/' && strPath.At(1)==L'/'))
+/*		if (strPath.At(1)==L':' || (strPath.At(0)==L'/' && strPath.At(1)==L'/'))
 		{
 			bool DoubleSlash = strPath.At(1)==L'/';
 			while(ReplaceStrings(strPath,L"//",L"/"));
@@ -461,7 +424,7 @@ FARString& PrepareDiskPath(FARString &strPath, bool CheckFullPath)
 			}
 
 			strPath.ReleaseBuffer(strPath.GetLength());
-		}
+		}*/
 	}
 
 	return strPath;
@@ -480,5 +443,22 @@ void ConvertNameToFull(const wchar_t *lpwszSrc, FARString &strDest)
 	apiGetCurrentDirectory(strCurDir);
 	FARString strSrc = lpwszSrc;
 	MixToFullPath(strSrc,strDest,strCurDir);
+}
+
+
+void ConvertNameToFull(FARString &strSrcDest)
+{
+	ConvertNameToFull(strSrcDest, strSrcDest);
+}
+
+
+void ConvertHomePrefixInPath(FARString &strFileName)
+{
+	if (strFileName.GetLength() > 1 && strFileName[0] == L'~' && strFileName[1] == GOOD_SLASH) {
+		const char * home = getenv("HOME");
+		if (!home)
+			home = "/tmp";
+		strFileName.Replace(0, 1, FARString(home));
+	}
 }
 

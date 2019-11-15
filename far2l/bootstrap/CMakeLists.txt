@@ -1,5 +1,5 @@
 
-cmake_minimum_required (VERSION 3.2.2)
+cmake_minimum_required (VERSION 3.0.2)
 
 set(TOOLS "${CMAKE_BINARY_DIR}/tools")
 set(FARLNGTOOL "${TOOLS}/farlng")
@@ -19,7 +19,11 @@ set(DIRBIT 64)
 
 # set(RM rm) actually not needed: use $(CMAKE_COMMAND) -E remove
 set(GAWK gawk)
-set(M4 m4 -P "-DARCH=${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_PROCESSOR}")
+if (${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
+  set(M4 gm4 -P "-DARCH=${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_PROCESSOR}")
+else()
+  set(M4 m4 -P "-DARCH=${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_PROCESSOR}")
+endif()
 
 set(BOOTSTRAP "${PROJECT_BINARY_DIR}/bootstrap")
 set(SCRIPTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
@@ -107,5 +111,5 @@ add_custom_command(TARGET bootstrap
 
 add_custom_command(TARGET bootstrap
    POST_BUILD
-   COMMAND "cp" "${CMAKE_CURRENT_SOURCE_DIR}/*.svg" "${CMAKE_CURRENT_SOURCE_DIR}/*.sh" "${INSTALL_DIR}"
+   COMMAND "cp" "${CMAKE_CURRENT_SOURCE_DIR}/*.sh" "${INSTALL_DIR}"
 )

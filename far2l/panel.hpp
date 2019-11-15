@@ -100,7 +100,7 @@ enum
 	DRIVE_SHOW_REMOTE     = 0x00000200,
 };
 
-enum {UPDATE_KEEP_SELECTION=1,UPDATE_SECONDARY=2,UPDATE_IGNORE_VISIBLE=4,UPDATE_DRAW_MESSAGE=8};
+enum {UPDATE_KEEP_SELECTION=1,UPDATE_SECONDARY=2,UPDATE_IGNORE_VISIBLE=4,UPDATE_DRAW_MESSAGE=8,UPDATE_CAN_BE_ANNOYING=16};
 
 enum {NORMAL_PANEL,PLUGIN_PANEL};
 
@@ -145,6 +145,9 @@ class Panel:public ScreenObject
 		void FastFindShow(int FindX,int FindY);
 		void FastFindProcessName(Edit *FindEdit,const wchar_t *Src,FARString &strLastName, FARString &strName);
 		void DragMessage(int X,int Y,int Move);
+		bool SetLocation_Directory(const wchar_t *path);
+		bool SetLocation_Plugin(bool file_plugin, class Plugin *plugin, const wchar_t *path, const wchar_t *host_file, LONG_PTR item);
+		int OnFCtlSetLocation(const FarPanelLocation *location);
 
 	protected:
 		void FastFind(int FirstKey);
@@ -163,6 +166,8 @@ class Panel:public ScreenObject
 		virtual void ChangeDirToCurrent();
 
 		virtual int GetCurDir(FARString &strCurDir);
+
+		virtual int GetCurDirPluginAware(FARString &strCurDir);
 
 		virtual int GetSelCount() {return 0;};
 		virtual int GetRealSelCount() {return 0;};

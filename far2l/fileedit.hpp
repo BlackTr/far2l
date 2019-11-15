@@ -105,6 +105,13 @@ class FileEditor : public Frame
 		virtual void Show();
 		void SetPluginTitle(const wchar_t *PluginTitle);
 
+		struct ISaveObserver
+		{
+			virtual void OnEditedFileSaved(const wchar_t *FileName) = 0;
+		};
+
+		void SetSaveObserver(ISaveObserver *observer = nullptr) { SaveObserver = observer;}
+
 		static const FileEditor *CurrentEditor;
 
 	private:
@@ -121,8 +128,7 @@ class FileEditor : public Frame
 		FARString strLoadedFileName;
 		FAR_FIND_DATA_EX FileInfo;
 		wchar_t AttrStr[4]; // 13.02.2001 IS - Сюда запомним буквы атрибутов, чтобы не вычислять их много раз
-		DWORD FileAttributes; // 12.02.2001 IS - сюда запомним атрибуты файла при открытии, пригодятся где-нибудь...
-		BOOL FileAttributesModified; // 04.11.2003 SKV - надо ли восстанавливать аттрибуты при save
+		IUnmakeWritablePtr FileUnmakeWritable;
 		DWORD SysErrorCode;
 		bool m_bClosing; // 28.04.2005 AY: true когда редактор закрываеться (т.е. в деструкторе)
 		bool bEE_READ_Sent;
@@ -130,6 +136,7 @@ class FileEditor : public Frame
 		bool BadConversion;
 		UINT m_codepage; //BUGBUG
 		int SaveAsTextFormat;
+		ISaveObserver *SaveObserver = nullptr;
 
 		virtual void DisplayObject();
 		int  ProcessQuitKey(int FirstSave,BOOL NeedQuestion=TRUE);
@@ -175,3 +182,53 @@ class FileEditor : public Frame
 };
 
 bool dlgOpenEditor(FARString &strFileName, UINT &codepage);
+void ModalEditTempFile(const std::string &pathname, bool scroll_to_end);//erases file internally
+
+struct BaseEditedFileUploader : public FileEditor::ISaveObserver
+{
+	struct timespec mtim{};
+
+	void GetCurrentTimestamp()
+	{
+		struct stat s{};
+		if (sdc_stat(strTempFileName.GetMB().c_str(), &s) == 0)
+		{
+			mtim = s.st_mtim;
+		}
+	}
+
+	virtual void OnEditedFileSaved(const wchar_t *FileName)
+	{
+		if (strTempFileName != FileName)
+		{
+			fprintf(stderr, "OnEditedFileSaved: '%ls' != '%ls'\n", strTempFileName.CPtr(), FileName);
+			return;
+		}
+
+		UploadTempFile();
+		GetCurrentTimestamp();
+	}
+
+protected:
+	FARString strTempFileName;
+
+	virtual void UploadTempFile() = 0;
+
+public:
+	BaseEditedFileUploader(const FARString &strTempFileName_)
+	:
+		strTempFileName(strTempFileName_)
+	{
+		GetCurrentTimestamp();
+	}
+
+	void UploadIfTimestampChanged()
+	{
+		struct stat s{};
+		if (sdc_stat(strTempFileName.GetMB().c_str(), &s) == 0
+		 && (mtim.tv_sec != s.st_mtim.tv_sec || mtim.tv_nsec != s.st_mtim.tv_nsec))
+		{
+			UploadTempFile();
+		}
+	}
+};

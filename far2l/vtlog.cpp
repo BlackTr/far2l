@@ -6,6 +6,10 @@
 #include <deque>
 #include <fcntl.h>
 
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
+# include <alloca.h>
+#endif
+
 #include "vtlog.h"
 
 
@@ -13,13 +17,20 @@
 
 namespace VTLog
 {
+	struct DumpState
+	{
+		DumpState() : nonempty(false) {}
+		
+		bool nonempty;
+	};
+	
 	class Lines
 	{
 		std::mutex _mutex;
 		std::deque<std::string> _memories;
 		
 		enum {
-			LIMIT_NOT_IMPORTANT	= 100,
+			LIMIT_NOT_IMPORTANT	= 1000,
 			LIMIT_IMPORTANT = 5000
 		};
 		
@@ -69,22 +80,28 @@ namespace VTLog
 			RemoveAllExcept(LIMIT_NOT_IMPORTANT);
 		}
 		
-		void DumpToString(std::string &out) 
+		void DumpToString(std::string &out, DumpState &ds) 
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
-			for (auto m : _memories) {
-				out+= m;
-				out+= NATIVE_EOL;
+			for (const auto &m : _memories) {
+				if (ds.nonempty || !m.empty()) {
+					ds.nonempty = true;
+					out+= m;
+					out+= NATIVE_EOL;
+				}
 			}
 		}
 		
-		void DumpToFile(int fd) 
+		void DumpToFile(int fd, DumpState &ds) 
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
 			for (auto m : _memories) {
-				m+= NATIVE_EOL;
-				if (write(fd, m.c_str(), m.size()) != (int)m.size())
-					perror("VTLog: WriteToFile");
+				if (ds.nonempty || !m.empty()) {
+					ds.nonempty = true;
+					m+= NATIVE_EOL;
+					if (write(fd, m.c_str(), m.size()) != (int)m.size())
+						perror("VTLog: WriteToFile");
+				}
 			}
 		}
 		
@@ -95,7 +112,8 @@ namespace VTLog
 
 		
 	} g_lines;
-	
+
+	static unsigned int g_pause_cnt = 0;
 	
 	static unsigned int ActualLineWidth(unsigned int Width, const CHAR_INFO *Chars)
 	{
@@ -110,10 +128,22 @@ namespace VTLog
 		}		
 	}
 	
-	void  OnConsoleScroll(PVOID pContext, unsigned int Top, unsigned int Width, CHAR_INFO *Chars)
+	void  OnConsoleScroll(PVOID pContext, unsigned int Width, CHAR_INFO *Chars)
 	{
-		if (Top==0) {
+		if (g_pause_cnt == 0) {
 			g_lines.Add( ActualLineWidth(Width, Chars), Chars);
+		}
+	}
+
+	void Pause()
+	{
+		__sync_add_and_fetch(&g_pause_cnt, 1);
+	}
+
+	void Resume()
+	{
+		if (__sync_sub_and_fetch(&g_pause_cnt, 1) < 0) {
+			abort();
 		}
 	}
 	
@@ -133,23 +163,25 @@ namespace VTLog
 		g_lines.Reset();
 	}
 	
-	static void AppendScreenLines(std::string &s)
+	static void AppendScreenLines(std::string &s, DumpState &ds)
 	{
 		CONSOLE_SCREEN_BUFFER_INFO csbi = { };
-		if (WINPORT(GetConsoleScreenBufferInfo)(NULL, &csbi) && csbi.dwSize.X > 0 && csbi.dwSize.Y > 1) {
-			--csbi.dwSize.Y;//dont grab keys
+		if (WINPORT(GetConsoleScreenBufferInfo)(NULL, &csbi) && csbi.dwSize.X > 0 && csbi.dwSize.Y > 0) {
 			std::vector<CHAR_INFO> line(csbi.dwSize.X);
 			COORD buf_pos = { }, buf_size = {csbi.dwSize.X, 1};
 			SMALL_RECT rc = {0, 0, (SHORT) (csbi.dwSize.X - 1), 0};
 			for (rc.Top = rc.Bottom = 0; rc.Top < csbi.dwSize.Y; rc.Top = ++rc.Bottom) {
 				if (WINPORT(ReadConsoleOutput)(NULL, &line[0], buf_size, buf_pos, &rc)) {
 					unsigned int width = ActualLineWidth(csbi.dwSize.X, &line[0]);
-					for (unsigned int i = 0; i < width; ++i) {
-						WCHAR wz[2] = {line[i].Char.UnicodeChar, 0};
-						if (!wz[0]) wz[0] = L' ';
-						s+= Wide2MB(wz);
+					if (width || ds.nonempty) {
+						ds.nonempty = true;
+						for (unsigned int i = 0; i < width; ++i) {
+							WCHAR wz[2] = {line[i].Char.UnicodeChar, 0};
+							if (!wz[0]) wz[0] = L' ';
+							s+= Wide2MB(wz);
+						}
+						s+= NATIVE_EOL;					
 					}
-					s+= NATIVE_EOL;
 				}
 			}
 		}		
@@ -158,21 +190,21 @@ namespace VTLog
 	void GetAsString(std::string &s, bool append_screen_lines) 
 	{
 		s.clear();
-		g_lines.DumpToString(s);
+		DumpState ds;
+		g_lines.DumpToString(s, ds);
 		if (append_screen_lines) 
-			AppendScreenLines(s);
+			AppendScreenLines(s, ds);
 	}
 	
 	std::string GetAsFile(bool append_screen_lines)
 	{
-		const char *home = getenv("HOME");
-		std::string path = home ? home : "/tmp";
 		char name[128];
 		SYSTEMTIME st;
 		WINPORT(GetLocalTime)(&st);
-		sprintf(name, "/farvt_%u-%u-%u_%u-%u-%u.log", 
+		sprintf(name, "farvt_%u-%u-%u_%u-%u-%u.log", 
 			st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-		path+= name;
+
+		std::string path = InMyTemp(name);
 				
 		std::string s;
 		GetAsString(s, append_screen_lines);
@@ -183,10 +215,11 @@ namespace VTLog
 			return std::string();
 		}
 			
-		g_lines.DumpToFile(fd);
+		DumpState ds;
+		g_lines.DumpToFile(fd, ds);
 		if (append_screen_lines) {
 			std::string s;
-			AppendScreenLines(s);
+			AppendScreenLines(s, ds);
 			if (!s.empty()) {
 				if (write(fd, s.c_str(), s.size()) != (int)s.size())
 					perror("VTLog: write");				
@@ -196,5 +229,6 @@ namespace VTLog
 		return path;
 	}
 }
+
 
 

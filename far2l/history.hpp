@@ -34,6 +34,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "DList.hpp"
+#include "SharedResource.h"
 
 class Dialog;
 class VMenu;
@@ -86,15 +87,18 @@ class History
 		enumHISTORYTYPE TypeHistory;
 		size_t HistoryCount;
 		const int *EnableSave;
-
 		DList<HistoryRecord> HistoryList;
 		HistoryRecord *CurrentItem;
+		SharedResource SharedRes;
 
 	private:
 		void AddToHistoryLocal(const wchar_t *Str, const wchar_t *Prefix, int Type);
 		bool EqualType(int Type1, int Type2);
 		const wchar_t *GetTitle(int Type);
 		int ProcessMenu(FARString &strStr, const wchar_t *Title, VMenu &HistoryMenu, int Height, int &Type, Dialog *Dlg);
+		bool ReadHistory(bool bOnlyLines=false);
+		bool SaveHistory();
+		void SyncChanges();
 
 	public:
 		History(enumHISTORYTYPE TypeHistory, size_t HistoryCount, const wchar_t *RegKey, const int *EnableSave, bool SaveType);
@@ -102,8 +106,6 @@ class History
 
 	public:
 		void AddToHistory(const wchar_t *Str, int Type=0, const wchar_t *Prefix=nullptr, bool SaveForbid=false);
-		bool ReadHistory(bool bOnlyLines=false);
-		bool SaveHistory();
 		static bool ReadLastItem(const wchar_t *RegKey, FARString &strStr);
 		int  Select(const wchar_t *Title, const wchar_t *HelpTopic, FARString &strStr, int &Type);
 		int  Select(VMenu &HistoryMenu, int Height, Dialog *Dlg, FARString &strStr);

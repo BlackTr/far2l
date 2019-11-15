@@ -66,14 +66,11 @@ bool IsLocalVolumeRootPath(const wchar_t *Path);
 bool IsAbsolutePath(const wchar_t *Path);
 bool IsRootPath(const FARString &Path);
 bool HasPathPrefix(const wchar_t *Path);
-bool PathStartsWith(const FARString &Path, const FARString &Start);
 bool PathCanHoldRegularFile(const wchar_t *Path);
 bool IsPluginPrefixPath(const wchar_t *Path);
 
 bool CutToSlash(FARString &strStr, bool bInclude = false);
-FARString &CutToNameUNC(FARString &strPath);
 FARString &CutToFolderNameIfFolder(FARString &strPath);
-const wchar_t *PointToNameUNC(const wchar_t *lpwszPath);
 const wchar_t* WINAPI PointToName(const wchar_t *lpwszPath);
 const wchar_t* PointToName(FARString &strPath);
 const wchar_t* PointToName(const wchar_t *lpwszPath,const wchar_t *lpwszEndPtr);
@@ -102,3 +99,13 @@ FARString ExtractPathRoot(const FARString &Path);
 FARString ExtractFileName(const FARString &Path);
 FARString ExtractFilePath(const FARString &Path);
 
+template < bool (*PTranslateFN)(std::wstring &s) > 
+	static bool TranslateFarString(FARString &str)
+{
+	std::wstring tmp(str.CPtr(), str.GetLength());
+	if ( !PTranslateFN(tmp))
+		return false;
+		
+	str.Copy(tmp.c_str(), tmp.size());
+	return true;
+}

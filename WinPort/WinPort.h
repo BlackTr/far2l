@@ -17,6 +17,7 @@
 extern "C" {
 #endif
 	int WinPortMain(int argc, char **argv, int (*AppMain)(int argc, char **argv));
+	void WinPortHelp();
 
 	///console API
 	WINPORT_DECL(GetConsoleFontSize,COORD,( HANDLE hConsoleOutput, DWORD  nFont));
@@ -51,6 +52,7 @@ extern "C" {
 	
 	WINPORT_DECL(SetConsoleDisplayMode,BOOL,(DWORD ModeFlags));
 	WINPORT_DECL(GetConsoleDisplayMode,BOOL,(LPDWORD lpModeFlags));
+	WINPORT_DECL(SetConsoleWindowMaximized,VOID,(BOOL Maximized));
 
 	//WINPORT_DECL(AddConsoleAlias, BOOL,( LPCWSTR Source, LPCWSTR Target, LPCWSTR ExeName));
 	WINPORT_DECL(GetConsoleAlias, DWORD,(LPWSTR lpSource, LPWSTR lpTargetBuffer, DWORD TargetBufferLength, LPWSTR lpExeName));
@@ -60,10 +62,23 @@ extern "C" {
 	WINPORT_DECL(SetConsoleScrollRegion, VOID, (HANDLE hConsoleOutput, SHORT top, SHORT bottom));
 	WINPORT_DECL(GetConsoleScrollRegion, VOID, (HANDLE hConsoleOutput, SHORT *top, SHORT *bottom));
 
-	typedef VOID (*PCONSOLE_SCROLL_CALLBACK)(PVOID pContext, unsigned int Top, unsigned int Width, CHAR_INFO *Charss);
+	typedef VOID (*PCONSOLE_SCROLL_CALLBACK)(PVOID pContext, unsigned int Width, CHAR_INFO *Charss);
 	WINPORT_DECL(SetConsoleScrollCallback, VOID, (HANDLE hConsoleOutput, PCONSOLE_SCROLL_CALLBACK pCallback, PVOID pContext));
-	
-	WINPORT_DECL(BeginConsoleAdhocQuickEdit, BOOL, ());
+	WINPORT_DECL(BeginConsoleAdhocQuickEdit, BOOL, ());	
+	WINPORT_DECL(SetConsoleTweaks, DWORD, (DWORD tweaks));
+#define EXCLUSIVE_CTRL_LEFT			0x00000001
+#define EXCLUSIVE_CTRL_RIGHT		0x00000002
+#define EXCLUSIVE_ALT_LEFT			0x00000004
+#define EXCLUSIVE_ALT_RIGHT			0x00000008
+#define EXCLUSIVE_WIN_LEFT			0x00000010
+#define EXCLUSIVE_WIN_RIGHT			0x00000020
+#define CONSOLE_PAINT_SHARP			0x00010000
+#define TWEAK_STATUS_SUPPORT_EXCLUSIVE_KEYS	0x1
+#define TWEAK_STATUS_SUPPORT_PAINT_SHARP	0x2
+
+	WINPORT_DECL(ConsoleChangeFont, VOID, ());
+	WINPORT_DECL(IsConsoleActive, BOOL, ());
+	WINPORT_DECL(ConsoleDisplayNotification, VOID, (const WCHAR *title, const WCHAR *text));
 
 	///Registry API
 	WINPORT_DECL(RegOpenKeyEx, LONG, (HKEY hKey,LPCWSTR lpSubKey, DWORD ulOptions, REGSAM samDesired, PHKEY phkResult));
@@ -87,6 +102,9 @@ extern "C" {
 		LPDWORD lpReserved, LPDWORD lpcSubKeys, LPDWORD lpcMaxSubKeyLen, LPDWORD lpcMaxClassLen,
 		LPDWORD lpcValues, LPDWORD lpcMaxValueNameLen, LPDWORD lpcMaxValueLen,
 		LPDWORD lpcbSecurityDescriptor, PFILETIME lpftLastWriteTime));
+
+	WINPORT_DECL(RegWipeBegin, VOID, ());
+	WINPORT_DECL(RegWipeEnd, VOID, ());
 
 //other
 	WINPORT_DECL(TranslateErrno, VOID, ());
@@ -134,12 +152,24 @@ extern "C" {
 		LONG lDistanceToMove, PLONG  lpDistanceToMoveHigh, DWORD  dwMoveMethod));
 	WINPORT_DECL(GetFileTime, BOOL, ( HANDLE hFile, LPFILETIME lpCreationTime, 
 		LPFILETIME lpLastAccessTime, LPFILETIME lpLastWriteTime));
+	WINPORT_DECL(SetFileTime, BOOL, ( HANDLE hFile, const FILETIME *lpCreationTime, 
+		const FILETIME *lpLastAccessTime, const FILETIME *lpLastWriteTime));
 	WINPORT_DECL(SetEndOfFile, BOOL, ( HANDLE hFile));
 	WINPORT_DECL(FlushFileBuffers, BOOL, ( HANDLE hFile));
 	WINPORT_DECL(GetFileType, DWORD, ( HANDLE hFile));
 
 	WINPORT_DECL(GetFileAttributes, DWORD, (LPCWSTR lpFileName));
 	WINPORT_DECL(SetFileAttributes, DWORD, (LPCWSTR lpFileName, DWORD dwAttributes));
+	
+#define FIND_FILE_FLAG_NO_DIRS		0x01
+#define FIND_FILE_FLAG_NO_FILES		0x02
+#define FIND_FILE_FLAG_NO_LINKS		0x04
+#define FIND_FILE_FLAG_NO_DEVICES	0x08
+#define FIND_FILE_FLAG_NO_CUR_UP	0x10 //skip virtual . and ..
+#define FIND_FILE_FLAG_CASE_INSENSITIVE	0x1000 //currently affects only english characters
+#define FIND_FILE_FLAG_NOT_ANNOYING	0x2000 //avoid sudo prompt if can't query some not very important information without it
+	
+	WINPORT_DECL(FindFirstFileWithFlags, HANDLE, (LPCWSTR lpFileName, LPWIN32_FIND_DATAW lpFindFileData, DWORD dwFlags));
 	WINPORT_DECL(FindFirstFile, HANDLE, (LPCWSTR lpFileName, LPWIN32_FIND_DATAW lpFindFileData));
 	WINPORT_DECL(FindNextFile, BOOL, (HANDLE hFindFile, LPWIN32_FIND_DATAW lpFindFileData));
 	WINPORT_DECL(FindClose, BOOL, (HANDLE hFindFile));
@@ -237,7 +267,6 @@ extern "C" {
 	WINPORT_DECL(ToUnicodeEx, int, (UINT wVirtKey, UINT wScanCode, CONST BYTE *lpKeyState, 
 		LPWSTR pwszBuff, int cchBuff, UINT wFlags, HKL dwhkl));
 	
-	
 	WINPORT_DECL(WSAGetLastError, DWORD, ());
 
 
@@ -246,10 +275,12 @@ extern "C" {
 	SHAREDSYMBOL int swprintf_ws2ls (wchar_t* ws, size_t len, const wchar_t* format, ...);
 
 
+	SHAREDSYMBOL void SetPathTranslationPrefix(const wchar_t *prefix);
 
+	SHAREDSYMBOL const wchar_t *GetPathTranslationPrefix();
+	SHAREDSYMBOL const char *GetPathTranslationPrefixA();
 #ifdef __cplusplus
 }
-
 
 struct __attribute__ ((visibility("default"))) WINPORT(LastErrorGuard)
 {
@@ -258,5 +289,17 @@ struct __attribute__ ((visibility("default"))) WINPORT(LastErrorGuard)
 	WINPORT(LastErrorGuard)();
 	~ WINPORT(LastErrorGuard)();
 };
-#endif
 
+
+struct RegWipeScope
+{
+	inline RegWipeScope()
+	{
+		WINPORT(RegWipeBegin)();
+	}
+	inline ~RegWipeScope()
+	{
+		WINPORT(RegWipeEnd)();
+	}
+};
+#endif

@@ -72,7 +72,7 @@ void FileList::Update(int Mode)
 		switch (PanelMode)
 		{
 			case NORMAL_PANEL:
-				ReadFileNames(Mode & UPDATE_KEEP_SELECTION, Mode & UPDATE_IGNORE_VISIBLE,Mode & UPDATE_DRAW_MESSAGE);
+				ReadFileNames(Mode & UPDATE_KEEP_SELECTION, Mode & UPDATE_IGNORE_VISIBLE,Mode & UPDATE_DRAW_MESSAGE,Mode & UPDATE_CAN_BE_ANNOYING);
 				break;
 			case PLUGIN_PANEL:
 			{
@@ -81,7 +81,7 @@ void FileList::Update(int Mode)
 				ProcessPluginCommand();
 
 				if (PanelMode!=PLUGIN_PANEL)
-					ReadFileNames(Mode & UPDATE_KEEP_SELECTION, Mode & UPDATE_IGNORE_VISIBLE,Mode & UPDATE_DRAW_MESSAGE);
+					ReadFileNames(Mode & UPDATE_KEEP_SELECTION, Mode & UPDATE_IGNORE_VISIBLE,Mode & UPDATE_DRAW_MESSAGE,Mode & UPDATE_CAN_BE_ANNOYING);
 				else if ((Info.Flags & OPIF_REALNAMES) ||
 				         CtrlObject->Cp()->GetAnotherPanel(this)->GetMode()==PLUGIN_PANEL ||
 				         !(Mode & UPDATE_SECONDARY))
@@ -121,7 +121,7 @@ static void PR_ReadFileNamesMsg()
 // ЭТО ЕСТЬ УЗКОЕ МЕСТО ДЛЯ СКОРОСТНЫХ ХАРАКТЕРИСТИК Far Manager
 // при считывании дирректории
 
-void FileList::ReadFileNames(int KeepSelection, int IgnoreVisible, int DrawMessage)
+void FileList::ReadFileNames(int KeepSelection, int IgnoreVisible, int DrawMessage, int CanBeAnnoying)
 {
 	TPreRedrawFuncGuard preRedrawFuncGuard(PR_ReadFileNamesMsg);
 
@@ -138,7 +138,7 @@ void FileList::ReadFileNames(int KeepSelection, int IgnoreVisible, int DrawMessa
 	AccessTimeUpdateRequired=FALSE;
 	DizRead=FALSE;
 	FAR_FIND_DATA_EX fdata;
-	FileListItem *CurPtr=0,**OldData=0;
+	FileListItem *CurPtr=nullptr,**OldData=nullptr;
 	FARString strCurName, strNextCurName;
 	int OldFileCount=0;
 	CloseChangeNotification();
@@ -224,10 +224,10 @@ void FileList::ReadFileNames(int KeepSelection, int IgnoreVisible, int DrawMessa
 	ListData=nullptr;
 	int ReadOwners=IsColumnDisplayed(OWNER_COLUMN);
 	int ReadGroups=IsColumnDisplayed(GROUP_COLUMN);
-	int ReadPacked=IsColumnDisplayed(PACKED_COLUMN);
+	//int ReadPacked=IsColumnDisplayed(PACKED_COLUMN);
 	int ReadNumLinks=IsColumnDisplayed(NUMLINK_COLUMN);
-	int ReadNumStreams=IsColumnDisplayed(NUMSTREAMS_COLUMN);
-	int ReadStreamsSize=IsColumnDisplayed(STREAMSSIZE_COLUMN);
+	//int ReadNumStreams=IsColumnDisplayed(NUMSTREAMS_COLUMN);
+	//int ReadStreamsSize=IsColumnDisplayed(STREAMSSIZE_COLUMN);
 	FARString strComputerName;
 
 
@@ -253,11 +253,14 @@ void FileList::ReadFileNames(int KeepSelection, int IgnoreVisible, int DrawMessa
 
 	FileCount = 0;
 	//BUGBUG!!! // что это?
-	::FindFile Find(L"*",true);
+	::FindFile Find(L"*",true, CanBeAnnoying ? FIND_FILE_FLAG_NO_CUR_UP : FIND_FILE_FLAG_NO_CUR_UP | FIND_FILE_FLAG_NOT_ANNOYING);
 	DWORD FindErrorCode = ERROR_SUCCESS;
 	bool UseFilter=Filter->IsEnabledOnPanel();
 	bool ReadCustomData=IsColumnDisplayed(CUSTOM_COLUMN0)!=0;
 
+	CachedFileOwnerLookup cached_owners;
+	CachedFileGroupLookup cached_groups;
+	
 	DWORD StartTime = WINPORT(GetTickCount)();
 
 	while (Find.Get(fdata))
@@ -289,7 +292,7 @@ void FileList::ReadFileNames(int KeepSelection, int IgnoreVisible, int DrawMessa
 			NewPtr->UnpSize = fdata.nFileSize;
 			NewPtr->strName = fdata.strFileName;
 			NewPtr->Position=FileCount++;
-			NewPtr->NumberOfLinks=1;
+			NewPtr->NumberOfLinks=fdata.nHardLinks;
 
 			if (fdata.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
 			{
@@ -298,7 +301,10 @@ void FileList::ReadFileNames(int KeepSelection, int IgnoreVisible, int DrawMessa
 
 			if (!(fdata.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
 			{
-				TotalFileSize += NewPtr->UnpSize;
+				if ((fdata.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0 || Opt.ScanJunction) {
+					TotalFileSize += NewPtr->UnpSize;
+				}
+
 				bool Compressed=false;
 
 /*				if (ReadPacked && ((fdata.dwFileAttributes & FILE_ATTRIBUTE_COMPRESSED) || (fdata.dwFileAttributes & FILE_ATTRIBUTE_SPARSE_FILE)))
@@ -313,7 +319,7 @@ void FileList::ReadFileNames(int KeepSelection, int IgnoreVisible, int DrawMessa
 					NewPtr->PackSize = fdata.nFileSize;
 
 				if (ReadNumLinks)
-					NewPtr->NumberOfLinks=1;//todoGetNumberOfLinks(fdata.strFileName);
+					NewPtr->NumberOfLinks=fdata.nHardLinks;//todoGetNumberOfLinks(fdata.strFileName);
 			}
 			else
 			{
@@ -322,18 +328,14 @@ void FileList::ReadFileNames(int KeepSelection, int IgnoreVisible, int DrawMessa
 
 			NewPtr->SortGroup=DEFAULT_SORT_GROUP;
 
-			if (ReadOwners)
-			{
-				FARString strOwner;
-				GetFileOwner(strComputerName, NewPtr->strName,strOwner);
-				NewPtr->strOwner = strOwner;
-			}
+			if (ReadOwners || ReadGroups) {
+				SudoSilentQueryRegion ssqr(!CanBeAnnoying);
 
-			if (ReadGroups)
-			{
-				FARString strGroup;
-				GetFileGroup(strComputerName, NewPtr->strName, strGroup);
-				NewPtr->strGroup = strGroup;
+				if (ReadOwners)
+					NewPtr->strOwner = cached_owners.Lookup(fdata.UnixOwner);
+
+				if (ReadGroups)
+					NewPtr->strGroup = cached_groups.Lookup(fdata.UnixGroup);
 			}
 
 			NewPtr->NumberOfStreams=NewPtr->FileAttr&FILE_ATTRIBUTE_DIRECTORY?0:1;
@@ -430,7 +432,7 @@ void FileList::ReadFileNames(int KeepSelection, int IgnoreVisible, int DrawMessa
 				GetFileGroup(strComputerName,strCurDir,TwoDotsGroup);
 			}
 
-			FILETIME TwoDotsTimes[4]={0};
+			FILETIME TwoDotsTimes[4]={};
 			if(apiGetFindDataEx(strCurDir,fdata))
 			{
 				TwoDotsTimes[0]=fdata.ftCreationTime;
@@ -625,7 +627,7 @@ void FileList::MoveSelection(FileListItem **ListData,long FileCount,
 
 	while (FileCount--)
 	{
-		OldPtr=(FileListItem **)bsearch(ListData,(void *)OldData,
+		OldPtr=(FileListItem **)bsearch(ListData,(const void *)OldData,
 		                                OldFileCount,sizeof(*ListData),SortSearchList);
 
 		if (OldPtr)
@@ -658,7 +660,7 @@ void FileList::UpdatePlugin(int KeepSelection, int IgnoreVisible)
 	}
 
 	DizRead=FALSE;
-	FileListItem *CurPtr, **OldData=0;
+	FileListItem *CurPtr, **OldData=nullptr;
 	FARString strCurName, strNextCurName;
 	int OldFileCount=0;
 	CloseChangeNotification();

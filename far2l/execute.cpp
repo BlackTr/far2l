@@ -58,21 +58,26 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "dirmix.hpp"
 #include "strmix.hpp"
 #include "panelmix.hpp"
+#include "mix.hpp"
 #include "syslog.hpp"
 #include "constitle.hpp"
 #include "console.hpp"
 #include "constitle.hpp"
 #include "vtshell.h"
+#include "InterThreadCall.hpp"
 #include <wordexp.h>
 #include <set>
 #include <sys/wait.h>
+#ifdef __FreeBSD__
+# include <signal.h>
+#endif
 
 static WCHAR eol[2] = {'\r', '\n'};
 
 class ExecClassifier
 {
-	bool _file, _executable, _backround;
-  std::string _cmd;
+	bool _dir, _file, _executable, _backround;
+	std::string _cmd;
 	
 	bool IsExecutableByExtension(const char *s)
 	{
@@ -85,7 +90,7 @@ class ExecClassifier
 	
 public:
 	ExecClassifier(const char *cmd) 
-		: _file(false), _executable(false), _backround(false)
+		: _dir(false), _file(false), _executable(false), _backround(false)
 	{
 		const char *bg_suffix = strrchr(cmd, '&');
 		if (bg_suffix && bg_suffix!=cmd && *(bg_suffix-1)!='\\') {
@@ -99,42 +104,61 @@ public:
 			return;
 		}
 		_cmd = argv[0];
+
+		struct stat s = {0};
+		if (stat(_cmd.c_str(),  &s) == -1) {
+			fprintf(stderr, "ExecClassifier('%s') - stat error %u\n", cmd, errno);
+			return;
+		}
+		if (S_ISDIR(s.st_mode)) {
+			_dir = true;
+			return;
+		}
+		if (!S_ISREG(s.st_mode)) {
+			fprintf(stderr, "IsPossibleXDGOpeSubject('%s') - not regular mode=0x%x\n", cmd, s.st_mode);
+			return;
+		}
+
 		int f = open(_cmd.c_str(), O_RDONLY);
 		if (f==-1) {
 			fprintf(stderr, "ExecClassifier('%s') - open error %u\n", cmd, errno);
 			return;
 		}
 		
-		struct stat s = {0};
-		if (fstat(f, &s)==0 && S_ISREG(s.st_mode)) {//todo: handle S_ISLNK(s.st_mode)
-			_file = true;
-			if ((s.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH))!=0) {
-				char buf[8] = { 0 };
-				int r = read(f, buf, sizeof(buf));
-				if (r > 4 && buf[0]==0x7f && buf[1]=='E' && buf[2]=='L' && buf[3]=='F') {
-					fprintf(stderr, "ExecClassifier('%s') - ELF executable\n", cmd);
-					_executable = true;
-				} else if (r > 2 && buf[0]=='#' && buf[1]=='!') {
-					fprintf(stderr, "ExecClassifier('%s') - script\n", cmd);
-					_executable = true;
-				} else {
-					_executable = IsExecutableByExtension(cmd);
-					fprintf(stderr, "ExecClassifier('%s') - unknown: %02x %02x %02x %02x assumed %sexecutable\n", 
-						cmd, (unsigned)buf[0], (unsigned)buf[1], (unsigned)buf[2], (unsigned)buf[3], _executable ? "" : "not ");
-				}
-			} else
+		_file = true;
+		if ((s.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH))!=0) {
+			char buf[8] = { 0 };
+			int r = read(f, buf, sizeof(buf));
+			if (r > 4 && buf[0]==0x7f && buf[1]=='E' && buf[2]=='L' && buf[3]=='F') {
+				fprintf(stderr, "ExecClassifier('%s') - ELF executable\n", cmd);
+				_executable = true;
+			} else if (r > 2 && buf[0]=='#' && buf[1]=='!') {
+				fprintf(stderr, "ExecClassifier('%s') - script\n", cmd);
+				_executable = true;
+			} else {
+				_executable = IsExecutableByExtension(_cmd.c_str());
+				fprintf(stderr, "ExecClassifier('%s') - unknown: %02x %02x %02x %02x assumed %sexecutable\n", 
+					cmd, (unsigned)buf[0], (unsigned)buf[1], (unsigned)buf[2], (unsigned)buf[3], _executable ? "" : "not ");
+			}
+		} else
 				fprintf(stderr, "IsPossibleXDGOpeSubject('%s') - not executable mode=0x%x\n", cmd, s.st_mode);	
-		} else 
-			fprintf(stderr, "IsPossibleXDGOpeSubject('%s') - not regular mode=0x%x\n", cmd, s.st_mode);
 	
 		close(f);
 	}
 	
 	const std::string& cmd() const {return _cmd; }
 	bool IsFile() const {return _file; }
+	bool IsDir() const {return _dir; }
 	bool IsExecutable() const {return _executable; }
 	bool IsBackground() const {return _backround; }
 };
+
+
+bool IsExecutableFilePath(const char *path)
+{
+	ExecClassifier ec(path);
+	return ec.IsExecutable();
+}
 
 static void CallExec(const char *CmdStr) 
 {
@@ -146,15 +170,16 @@ static void CallExec(const char *CmdStr)
 
 static int NotVTExecute(const char *CmdStr, bool NoWait, bool NeedSudo)
 {
-	int r = -1;
+	int r = -1, fdr = -1, fdw = -1;
 	if (NeedSudo) {
 		return sudo_client_execute(CmdStr, false, NoWait);
 	}
-	int fdr = open("/dev/null", O_RDONLY);
-	if (fdr==-1) perror("open stdin error");
+// DEBUG
+//	fdr = open(DEVNULL, O_RDONLY);
+//	if (fdr==-1) perror("stdin error opening " DEVNULL);
 	
 	//let debug out go to console
-	int fdw = open("/dev/null", O_WRONLY);
+//	fdw = open(DEVNULL, O_WRONLY);
 	//if (fdw==-1) perror("open stdout error");
 	int pid = fork();
 	if (pid==0) {
@@ -191,29 +216,36 @@ static int NotVTExecute(const char *CmdStr, bool NoWait, bool NeedSudo)
 	return r;
 }
 
-int WINAPI farExecuteA(const char *CmdStr, unsigned int ExecFlags)
+static int farExecuteASynched(const char *CmdStr, unsigned int ExecFlags)
 {
 //	fprintf(stderr, "TODO: Execute('" WS_FMT "')\n", CmdStr);
 	int r;
 	if (ExecFlags & EF_HIDEOUT) {
 		r = NotVTExecute(CmdStr, (ExecFlags & EF_NOWAIT) != 0, (ExecFlags & EF_SUDO) != 0);
+//		CtrlObject->CmdLine->SetString(L"", TRUE);//otherwise command remain in cmdline
+
 	} else {
 		ProcessShowClock++;
 		CtrlObject->CmdLine->ShowBackground();
 		CtrlObject->CmdLine->Redraw();
-		CtrlObject->CmdLine->SetString(L"", TRUE);
+//		CtrlObject->CmdLine->SetString(L"", TRUE);
 		ScrBuf.Flush();
 		DWORD saved_mode = 0, dw;
 		WINPORT(GetConsoleMode)(NULL, &saved_mode);
 		WINPORT(SetConsoleMode)(NULL, saved_mode | ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT
-			| ENABLE_EXTENDED_FLAGS | ENABLE_QUICK_EDIT_MODE | ENABLE_INSERT_MODE | WINDOW_BUFFER_SIZE_EVENT);
-		const std::wstring &ws = MB2Wide(CmdStr);
-		WINPORT(WriteConsole)( NULL, ws.c_str(), ws.size(), &dw, NULL );
+			| ENABLE_EXTENDED_FLAGS | ENABLE_MOUSE_INPUT | ENABLE_INSERT_MODE | WINDOW_BUFFER_SIZE_EVENT);//ENABLE_QUICK_EDIT_MODE
+		if ((ExecFlags & EF_NOCMDPRINT) == 0) {
+			const std::wstring &ws = MB2Wide(CmdStr);
+			WINPORT(WriteConsole)( NULL, ws.c_str(), ws.size(), &dw, NULL );
+		}
 		WINPORT(WriteConsole)( NULL, &eol[0], ARRAYSIZE(eol), &dw, NULL );
 		if (ExecFlags & (EF_NOWAIT|EF_HIDEOUT) ) {
 			r = NotVTExecute(CmdStr, (ExecFlags & EF_NOWAIT) != 0, (ExecFlags & EF_SUDO) != 0);
 		} else {
 			r = VTShell_Execute(CmdStr, (ExecFlags & EF_SUDO) != 0);
+		}
+		if ((ExecFlags & EF_NOTIFY) && Opt.NotifOpt.OnConsole) {
+			DisplayNotification( (r == 0) ? MSG(MConsoleCommandComplete) : MSG(MConsoleCommandFailed), CmdStr);
 		}
 		WINPORT(SetConsoleMode)( NULL, saved_mode | 
 			ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT );
@@ -224,10 +256,18 @@ int WINAPI farExecuteA(const char *CmdStr, unsigned int ExecFlags)
 		ProcessShowClock--;
 		SetFarConsoleMode(TRUE);
 		ScrBuf.Flush();
+		if (Opt.ShowKeyBar) {
+			CtrlObject->MainKeyBar->Show();
+		}
 	}
 	fprintf(stderr, "farExecuteA:('%s', 0x%x): r=%d\n", CmdStr, ExecFlags, r);
 	
 	return r;
+}
+
+int WINAPI farExecuteA(const char *CmdStr, unsigned int ExecFlags)
+{
+	return InterThreadCall<int, -1>(std::bind(farExecuteASynched, CmdStr, ExecFlags));
 }
 
 int WINAPI farExecuteLibraryA(const char *Library, const char *Symbol, const char *CmdStr, unsigned int ExecFlags)
@@ -243,30 +283,50 @@ int WINAPI farExecuteLibraryA(const char *Library, const char *Symbol, const cha
 	return farExecuteA(actual_cmd.c_str(), ExecFlags);
 }
 
+static std::string GetOpenShVerb(const char *verb)
+{
+	std::string out = GetMyScriptQuoted("open.sh");
+	out+= ' ';
+	out+= verb;
+	out+= ' ';
+	return out;
+}
+
 static int ExecuteA(const char *CmdStr, bool AlwaysWaitFinish, bool SeparateWindow, bool DirectRun, bool FolderRun , bool WaitForIdle , bool Silent , bool RunAs)
 {
 	int r = -1;
 	ExecClassifier ec(CmdStr);
-	unsigned int flags = ec.IsBackground() ? EF_NOWAIT | EF_HIDEOUT : 0;
-	if (ec.IsFile()) {
-		std::string tmp;
-		if (!ec.IsExecutable())
-			tmp+= "xdg-open ";
-
-  	if (ec.cmd()[0]!='/' && ec.cmd()[0]!='.')
-			tmp+= "./"; // it is ok to prefix ./ even to a quoted string
-		tmp += CmdStr;
-
-		if (!ec.IsExecutable()) {
-			r = farExecuteA(tmp.c_str(), flags | EF_NOWAIT);
-			if (r!=0) {
-				fprintf(stderr, "ClassifyAndRun: status %d errno %d for %s\n", r, errno, tmp.c_str() );
-				//TODO: nicely report if xdg-open exec failed
+	unsigned int flags = ec.IsBackground() ? EF_NOWAIT | EF_HIDEOUT : ( (Silent || SeparateWindow) ? 0 : EF_NOTIFY );
+	std::string tmp;
+	if (ec.IsDir() && SeparateWindow) {
+		tmp = GetOpenShVerb("dir");
+	} else if (ec.IsFile()) {
+		if (ec.IsExecutable()) {
+			if (SeparateWindow) {
+				tmp = GetOpenShVerb("exec");
 			}
-		} else
-			r = farExecuteA(tmp.c_str(), flags);
-	} else 
-		r = farExecuteA(CmdStr, flags);
+		} else {
+			tmp = GetOpenShVerb("other");
+		}
+	} else if (SeparateWindow) {
+		tmp = GetOpenShVerb("exec");
+	} else
+		return farExecuteA(CmdStr, flags);
+
+	if (!tmp.empty()) {
+		flags|= EF_NOWAIT | EF_HIDEOUT; //open.sh doesnt print anything
+	}
+	if ( (ec.IsFile() || ec.IsDir()) && ec.cmd()[0] != '/' && !StrStartsFrom(ec.cmd(), "./")) {
+		tmp+= "./"; // it is ok to prefix ./ even to a quoted string
+	}
+	tmp+= CmdStr;
+
+	r = farExecuteA(tmp.c_str(), flags);
+	if (r!=0) {
+		fprintf(stderr, "ClassifyAndRun: status %d errno %d for %s\n", r, errno, tmp.c_str() );
+		//TODO: nicely report if xdg-open exec failed
+	}
+
 	return r;
 }
 
@@ -316,7 +376,25 @@ int CommandLine::CmdExecute(const wchar_t *CmdLine, bool AlwaysWaitFinish, bool 
 		
 		r = -1; 
 	} else {
+		CtrlObject->CmdLine->SetString(L"", TRUE);
+		char cd_prev[MAX_PATH + 1] = {'.', 0};
+		if (!sdc_getcwd(cd_prev, MAX_PATH)) {
+			cd_prev[0] = 0;
+		}
+
 		r = Execute(CmdLine, AlwaysWaitFinish, SeparateWindow, DirectRun, false , WaitForIdle , Silent , RunAs);
+
+		char cd[MAX_PATH + 1] = {'.', 0};
+		if (sdc_getcwd(cd, MAX_PATH)) {
+			if (strcmp(cd_prev, cd) != 0) {
+				if (!IntChDir(MB2Wide(cd).c_str(), true, false)) {
+					perror("IntChDir");
+				}
+			}
+		} else {
+			perror("sdc_getcwd");
+		}
+
 	}
 
 	if (!Flags.Check(FCMDOBJ_LOCKUPDATEPANEL)) {
@@ -338,3 +416,33 @@ bool ProcessOSAliases(FARString &strStr)
 {
 	return false;
 }
+
+bool POpen(std::vector<std::wstring> &result, const char *command)
+{
+	FILE *f = popen(command, "r");
+	if (!f) {
+		perror("POpen: popen");
+		return false;
+	}
+
+	char buf[0x400] = { };
+	while (fgets(buf, sizeof(buf)-1, f)) {
+		size_t l = strlen(buf);
+		while (l && (buf[l-1]=='\r' || buf[l-1]=='\n')) --l;
+		if (l) {
+			buf[l] = 0;
+			std::wstring line = MB2Wide(buf);
+			while (line.size() > 40) {
+				size_t p = line.find(L',' , 30);
+				if (p==std::string::npos) break;
+				result.emplace_back( line.substr(0, p) );
+				line.erase(0, p + 1);
+			}
+
+			if (!line.empty()) result.push_back( line );
+		}
+	}
+	pclose(f);
+	return true;
+}
+

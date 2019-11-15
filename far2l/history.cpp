@@ -46,6 +46,14 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "strmix.hpp"
 #include "dialog.hpp"
 #include "interf.hpp"
+#include <crc64.h>
+#include "FileMasksProcessor.hpp"
+
+static uint64_t RegKey2ID(const FARString &str)
+{
+	const std::string &s = str.GetMB();
+	return crc64(0, (const unsigned char *)s.c_str(), s.size());
+}
 
 History::History(enumHISTORYTYPE TypeHistory, size_t HistoryCount, const wchar_t *RegKey, const int *EnableSave, bool SaveType):
 	strRegKey(RegKey),
@@ -56,13 +64,31 @@ History::History(enumHISTORYTYPE TypeHistory, size_t HistoryCount, const wchar_t
 	TypeHistory(TypeHistory),
 	HistoryCount(HistoryCount),
 	EnableSave(EnableSave),
-	CurrentItem(nullptr)
+	CurrentItem(nullptr),
+	SharedRes("history", RegKey2ID(strRegKey))
 {
+	if (*EnableSave)
+		ReadHistory();
 }
 
 History::~History()
 {
 }
+
+static bool IsAllowedForHistory(const wchar_t *Str)
+{
+	if (!Str || !*Str)
+		return false;
+
+	FileMasksProcessor fmp;
+	fmp.Set(Opt.AutoComplete.Exceptions.CPtr(), FMPF_ADDASTERISK);
+	if (!fmp.IsEmpty() && fmp.Compare(Str)) {
+		return false;
+	}
+	
+	return true;
+}
+
 
 /*
    SaveForbid - принудительно запретить запись добавляемой строки.
@@ -72,7 +98,13 @@ void History::AddToHistory(const wchar_t *Str, int Type, const wchar_t *Prefix, 
 {
 	if (!EnableAdd)
 		return;
+		
+	if (!IsAllowedForHistory(Str)) {
+		fprintf(stderr, "AddToHistory - disallowed: '%ls'\n", Str);
+		return;
+	}
 
+	SyncChanges();
 	AddToHistoryLocal(Str,Prefix,Type);
 
 	if (*EnableSave && !SaveForbid)
@@ -142,6 +174,7 @@ bool History::SaveHistory()
 
 	if (!HistoryList.Count())
 	{
+		SharedResource::Writer w(SharedRes, 30);
 		DeleteRegKey(strRegKey);
 		return true;
 	}
@@ -202,8 +235,8 @@ bool History::SaveHistory()
 	if (SaveType)
 		wmemset(TypesBuffer,0,HistoryList.Count()+1);
 
-	bool ret = false;
 	HKEY hKey = nullptr;
+	bool ret = false;
 	wchar_t *BufferLines=nullptr, *PtrBuffer;
 	size_t SizeLines=0, SizeTypes=0, SizeLocks=0, SizeTimes=0;
 	int Position = -1;
@@ -239,6 +272,7 @@ bool History::SaveHistory()
 
 	if (hKey)
 	{
+		SharedResource::Writer w(SharedRes, 30);
 		WINPORT(RegSetValueEx)(hKey,L"Lines",0,REG_MULTI_SZ,(unsigned char *)BufferLines,static_cast<DWORD>(SizeLines*sizeof(wchar_t)));
 
 		if (SaveType) {
@@ -302,6 +336,7 @@ bool History::ReadLastItem(const wchar_t *RegKey, FARString &strStr)
 
 bool History::ReadHistory(bool bOnlyLines)
 {
+	SharedResource::Reader r(SharedRes, 30);
 	HKEY hKey=OpenRegKey(strRegKey);
 
 	if (!hKey)
@@ -470,6 +505,16 @@ end:
 	return ret;
 }
 
+void History::SyncChanges()
+{
+	if (SharedRes.IsModified()) {
+		fprintf(stderr, "History::SyncChanges: %ls\n", strRegKey.CPtr());
+		CurrentItem = nullptr;
+		HistoryList.Clear();
+		ReadHistory();
+	}
+}
+
 const wchar_t *History::GetTitle(int Type)
 {
 	switch (Type)
@@ -529,6 +574,7 @@ int History::ProcessMenu(FARString &strStr, const wchar_t *Title, VMenu &History
 	bool Done=false;
 	bool SetUpMenuPos=false;
 
+	SyncChanges();
 	if (TypeHistory == HISTORYTYPE_DIALOG && HistoryList.Empty())
 		return 0;
 
@@ -570,6 +616,8 @@ int History::ProcessMenu(FARString &strStr, const wchar_t *Title, VMenu &History
 			if (!SetUpMenuPos)
 				MenuItem.SetSelect(CurrentItem==HistoryItem || (!CurrentItem && HistoryItem==HistoryList.Last()));
 
+			//NB: here is really should be used sizeof(HistoryItem), not sizeof(*HistoryItem)
+			//cuz sizeof(void *) has special meaning in SetUserData!
 			HistoryMenu.SetUserData(HistoryItem,sizeof(HistoryItem),HistoryMenu.AddItem(&MenuItem));
 		}
 
@@ -841,8 +889,10 @@ void History::GetPrev(FARString &strStr)
 {
 	CurrentItem=HistoryList.Prev(CurrentItem);
 
-	if (!CurrentItem)
+	if (!CurrentItem) {
+		SyncChanges();
 		CurrentItem=HistoryList.First();
+	}
 
 	if (CurrentItem)
 		strStr = CurrentItem->strName;
@@ -855,6 +905,8 @@ void History::GetNext(FARString &strStr)
 {
 	if (CurrentItem)
 		CurrentItem=HistoryList.Next(CurrentItem);
+	else
+		SyncChanges();
 
 	if (CurrentItem)
 		strStr = CurrentItem->strName;
@@ -865,6 +917,7 @@ void History::GetNext(FARString &strStr)
 
 bool History::GetSimilar(FARString &strStr, int LastCmdPartLength, bool bAppend)
 {
+	SyncChanges();
 	int Length=(int)strStr.GetLength();
 
 	if (LastCmdPartLength!=-1 && LastCmdPartLength<Length)
@@ -897,10 +950,11 @@ bool History::GetSimilar(FARString &strStr, int LastCmdPartLength, bool bAppend)
 
 bool History::GetAllSimilar(VMenu &HistoryMenu,const wchar_t *Str)
 {
+	SyncChanges();
 	int Length=StrLength(Str);
 	for (HistoryRecord *HistoryItem=HistoryList.Last();HistoryItem;HistoryItem=HistoryList.Prev(HistoryItem))
 	{
-		if (!StrCmpNI(Str,HistoryItem->strName,Length) && StrCmp(Str,HistoryItem->strName))
+		if (!StrCmpNI(Str,HistoryItem->strName,Length) && StrCmp(Str,HistoryItem->strName) && IsAllowedForHistory(HistoryItem->strName.CPtr()))
 		{
 			HistoryMenu.AddItem(HistoryItem->strName);
 		}
@@ -919,3 +973,4 @@ bool History::EqualType(int Type1, int Type2)
 {
 	return Type1 == Type2 || (TypeHistory == HISTORYTYPE_VIEW && ((Type1 == 4 && Type2 == 1) || (Type1 == 1 && Type2 == 4)))?true:false;
 }
+

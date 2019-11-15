@@ -43,15 +43,14 @@ Far Manager plugins that use this header file can be distributed under any
 other possible license with no implications from the above license on them.
 */
 
-#define FARMANAGERVERSION_MAJOR 1
-#define FARMANAGERVERSION_MINOR 80
-#define FARMANAGERVERSION_BUILD 496
+#define FARMANAGERVERSION_MAJOR 2
+#define FARMANAGERVERSION_MINOR 2
 
 #ifndef RC_INVOKED
 
-#define MAKEFARVERSION(major,minor,build) ( ((major)<<8) | (minor) | ((build)<<16))
+#define MAKEFARVERSION(major,minor) ( ((major)<<16) | (minor))
 
-#define FARMANAGERVERSION MAKEFARVERSION(FARMANAGERVERSION_MAJOR,FARMANAGERVERSION_MINOR,FARMANAGERVERSION_BUILD)
+#define FARMANAGERVERSION MAKEFARVERSION(FARMANAGERVERSION_MAJOR,FARMANAGERVERSION_MINOR)
 
 #include "../WinPort/WinCompat.h"
 #include "../WinPort/WinPort.h"
@@ -128,7 +127,9 @@ other possible license with no implications from the above license on them.
 #define FARMACRO_KEY_EVENT  (KEY_EVENT|0x8000)
 
 #ifdef FAR_USE_INTERNALS
+#ifndef _FAR_HAS_NAMELESS_UNIONS
 #define _FAR_NO_NAMELESS_UNIONS
+#endif
 #else // ELSE FAR_USE_INTERNALS
 // To ensure compatibility of plugin.hpp with compilers not supporting C++,
 // you can #define _FAR_NO_NAMELESS_UNIONS. In this case, to access,
@@ -356,6 +357,10 @@ enum FarMessagesProc
 	DM_SETDLGITEMSHORT,
 
 	DM_GETDIALOGINFO,
+
+	DM_GETCOLOR,
+	DM_SETCOLOR,
+
 
 	DN_FIRST=0x1000,
 	DN_BTNCLICK,
@@ -620,6 +625,7 @@ enum FARDIALOGFLAGS
 	FDLG_NONMODAL            = 0x00000010,
 #endif // END FAR_USE_INTERNALS
 	FDLG_KEEPCONSOLETITLE    = 0x00000020,
+	FDLG_REGULARIDLE         = 0x00000040 // causes dialog to receive DN_ENTERIDLE at least once per second
 };
 
 typedef LONG_PTR(WINAPI *FARWINDOWPROC)(
@@ -756,6 +762,7 @@ struct PluginPanelItem
 	DWORD         NumberOfLinks;
 	const wchar_t *Description;
 	const wchar_t *Owner;
+	const wchar_t *Group;
 	const wchar_t * const *CustomColumnData;
 	int           CustomColumnNumber;
 	DWORD_PTR     UserData;
@@ -816,6 +823,14 @@ struct CmdLineSelect
 	int SelEnd;
 };
 
+struct FarPanelLocation
+{
+	const wchar_t *PluginName; // set to -1 if its plain directory navigation
+	const wchar_t *HostFile; // if set the OpenFilePlugin is used and Item is ignored, otherwise its normal plugin
+	LONG_PTR Item; // ignored if HostFile is not NULL
+	const wchar_t *Path;
+};
+
 #define PANEL_NONE		((HANDLE)(-1))
 #define PANEL_ACTIVE	((HANDLE)(-1))
 #define PANEL_PASSIVE	((HANDLE)(-2))
@@ -857,6 +872,8 @@ enum FILE_CONTROL_COMMANDS
 	FCTL_GETPANELFORMAT,
 	FCTL_GETPANELHOSTFILE,
 	FCTL_SETCASESENSITIVESORT,
+	FCTL_GETPANELPLUGINHANDLE, // Param2 points to value of type HANDLE, sets that value to handle of plugin that renders that panel or INVALID_HANDLE_VALUE
+	FCTL_SETPANELLOCATION, // Param2 points to FarPanelLocation
 };
 
 typedef int (WINAPI *FARAPICONTROL)(
@@ -1073,7 +1090,7 @@ enum FarSystemSettings
 {
 	FSS_DELETETORECYCLEBIN             = 0x00000002,
 	FSS_WRITETHROUGH                   = 0x00000004,
-	FSS_COPYFILESOPENEDFORWRITING      = 0x00000008,
+	FSS_RESERVED                       = 0x00000008,
 	FSS_SAVECOMMANDSHISTORY            = 0x00000020,
 	FSS_SAVEFOLDERSHISTORY             = 0x00000040,
 	FSS_SAVEVIEWANDEDITHISTORY         = 0x00000080,
@@ -1928,11 +1945,68 @@ enum EXECUTEFLAGS
 {
 	EF_HIDEOUT = 0x01,
 	EF_NOWAIT = 0x02,
-	EF_SUDO = 0x04
+	EF_SUDO = 0x04,
+	EF_NOTIFY = 0x08,
+	EF_NOCMDPRINT = 0x10
 };
 
 typedef int (WINAPI *FAREXECUTE)(const wchar_t *CmdStr, unsigned int ExecFlags);
 typedef int (WINAPI *FAREXECUTE_LIBRARY)(const wchar_t *Library, const wchar_t *Symbol, const wchar_t *CmdStr, unsigned int ExecFlags);
+typedef void (WINAPI *FARDISPLAYNOTIFICATION)(const wchar_t *action, const wchar_t *object);
+typedef int (WINAPI *FARDISPATCHNTRTHRDCALLS)();
+
+enum BOX_DEF_SYMBOLS
+{
+	BS_X_B0,          // 0xB0
+	BS_X_B1,          // 0xB1
+	BS_X_B2,          // 0xB2
+	BS_V1,            // 0xB3
+	BS_R_H1V1,        // 0xB4
+	BS_R_H2V1,        // 0xB5
+	BS_R_H1V2,        // 0xB6
+	BS_RT_H1V2,       // 0xB7
+	BS_RT_H2V1,       // 0xB8
+	BS_R_H2V2,        // 0xB9
+	BS_V2,            // 0xBA
+	BS_RT_H2V2,       // 0xBB
+	BS_RB_H2V2,       // 0xBC
+	BS_RB_H1V2,       // 0xBD
+	BS_RB_H2V1,       // 0xBE
+	BS_RT_H1V1,       // 0xBF
+	BS_LB_H1V1,       // 0xC0
+	BS_B_H1V1,        // 0xC1
+	BS_T_H1V1,        // 0xC2
+	BS_L_H1V1,        // 0xC3
+	BS_H1,            // 0xC4
+	BS_C_H1V1,        // 0xC5
+	BS_L_H2V1,        // 0xC6
+	BS_L_H1V2,        // 0xC7
+	BS_LB_H2V2,       // 0xC8
+	BS_LT_H2V2,       // 0xC9
+	BS_B_H2V2,        // 0xCA
+	BS_T_H2V2,        // 0xCB
+	BS_L_H2V2,        // 0xCC
+	BS_H2,            // 0xCD
+	BS_C_H2V2,        // 0xCE
+	BS_B_H2V1,        // 0xCF
+	BS_B_H1V2,        // 0xD0
+	BS_T_H2V1,        // 0xD1
+	BS_T_H1V2,        // 0xD2
+	BS_LB_H1V2,       // 0xD3
+	BS_LB_H2V1,       // 0xD4
+	BS_LT_H2V1,       // 0xD5
+	BS_LT_H1V2,       // 0xD6
+	BS_C_H1V2,        // 0xD7
+	BS_C_H2V1,        // 0xD8
+	BS_RB_H1V1,       // 0xD9
+	BS_LT_H1V1,       // 0xDA
+	BS_X_DB,          // 0xDB
+	BS_X_DC,          // 0xDC
+	BS_X_DD,          // 0xDD
+	BS_X_DE,          // 0xDE
+	BS_X_DF,          // 0xDF
+};
+
 
 typedef struct FarStandardFunctions
 {
@@ -1952,7 +2026,8 @@ typedef struct FarStandardFunctions
 	FARSTDSNPRINTF             snprintf;
 	// </C&C++>
 
-	DWORD_PTR                  Reserved[8];
+	DWORD_PTR                  Reserved[7];
+	const WCHAR *              BoxSymbols; // indexed via BOX_DEF_SYMBOLS
 
 	FARSTDLOCALISLOWER         LIsLower;
 	FARSTDLOCALISUPPER         LIsUpper;
@@ -1995,6 +2070,8 @@ typedef struct FarStandardFunctions
 	FARGETCURRENTDIRECTORY     GetCurrentDirectory;
 	FAREXECUTE                 Execute;
 	FAREXECUTE_LIBRARY         ExecuteLibrary;
+	FARDISPLAYNOTIFICATION     DisplayNotification;
+	FARDISPATCHNTRTHRDCALLS    DispatchInterThreadCalls;
 } FARSTANDARDFUNCTIONS;
 
 struct PluginStartupInfo
@@ -2163,6 +2240,8 @@ enum OPERATION_MODES
 	OPM_TOPLEVEL   =0x0010,
 	OPM_DESCR      =0x0020,
 	OPM_QUICKVIEW  =0x0040,
+	OPM_PGDN       =0x0080,
+	OPM_COMMANDS   =0x0100,
 };
 
 struct OpenPluginInfo
@@ -2298,6 +2377,7 @@ extern "C"
 	int    WINAPI _export ConfigureW(int ItemNumber);
 	int    WINAPI _export DeleteFilesW(HANDLE hPlugin,struct PluginPanelItem *PanelItem,int ItemsNumber,int OpMode);
 	void   WINAPI _export ExitFARW(void);
+	int    WINAPI _export MayExitFARW(void);
 	void   WINAPI _export FreeFindDataW(HANDLE hPlugin,struct PluginPanelItem *PanelItem,int ItemsNumber);
 	void   WINAPI _export FreeVirtualFindDataW(HANDLE hPlugin,struct PluginPanelItem *PanelItem,int ItemsNumber);
 	int    WINAPI _export GetFilesW(HANDLE hPlugin,struct PluginPanelItem *PanelItem,int ItemsNumber,int Move,const wchar_t **DestPath,int OpMode);
@@ -2345,3 +2425,4 @@ extern "C"
 #endif /* RC_INVOKED */
 
 #endif /* __PLUGIN_HPP__ */
+

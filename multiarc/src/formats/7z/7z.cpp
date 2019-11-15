@@ -11,8 +11,8 @@
 #include <windows.h>
 #include <utils.h>
 #include <string.h>
-#ifndef __APPLE__
-#include <malloc.h>
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
+# include <malloc.h>
 #endif
 #include <stddef.h>
 #include <memory.h>
@@ -68,7 +68,7 @@ class Traverser
 	bool _opened, _valid;
 	
 public:
-	Traverser(const char *path) : _temp(NULL), _opened(false), _valid(false), _index(0), _temp_size(0)
+	Traverser(const char *path) : _temp(nullptr), _temp_size(0), _index(0), _opened(false), _valid(false)
 	{
 		if (InFile_Open(&_file_stream.file, path))
 			return;
@@ -199,8 +199,8 @@ BOOL WINAPI _export SEVENZ_OpenArchive(const char *Name,int *Type)
 {
 	Traverser *t = new Traverser(Name);
 	if (!t->Valid()) {
-		return FALSE;
 		delete t;
+		return FALSE;
 	}
 	
 	delete s_selected_traverser;

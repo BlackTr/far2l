@@ -232,7 +232,7 @@ int Help::ReadHelp(const wchar_t *Mask)
 		return TRUE;
 	}
 
-	UINT nCodePage = CP_OEMCP;
+	UINT nCodePage = CP_UTF8;
 	FILE *HelpFile=OpenLangFile(strPath,(!*Mask?HelpFileMask:Mask),Opt.strHelpLanguage,strFullHelpPathName, nCodePage);
 
 	if (!HelpFile)
@@ -810,7 +810,7 @@ void Help::DrawWindowFrame()
 	if (!strCurPluginContents.IsEmpty())
 		strHelpTitleBuf += strCurPluginContents;
 	else
-		strHelpTitleBuf += L"FAR";
+		strHelpTitleBuf += L"FAR2L";
 
 	TruncStrFromEnd(strHelpTitleBuf,X2-X1-3);
 	GotoXY(X1+(X2-X1+1-(int)strHelpTitleBuf.GetLength()-2)/2,Y1);
@@ -1805,7 +1805,7 @@ void Help::ReadDocumentsHelp(int TypeIndex)
 			{
 				strPath = CtrlObject->Plugins.GetPlugin(I)->GetModuleName();
 				CutToSlash(strPath);
-				UINT nCodePage = CP_OEMCP;
+				UINT nCodePage = CP_UTF8;
 				FILE *HelpFile=OpenLangFile(strPath,HelpFileMask,Opt.strHelpLanguage,strFullFileName, nCodePage);
 
 				if (HelpFile)

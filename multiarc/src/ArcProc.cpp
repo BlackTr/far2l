@@ -245,7 +245,7 @@ int PluginClass::SelectFormat(char *ArcFormat,int AddOnly)
         strncpy(MenuItems[MenuItemsNumber].Text.Text,Format,sizeof(MenuItems[MenuItemsNumber].Text.Text));
         MenuItems[MenuItemsNumber].Flags=((MenuItemsNumber==0 &&
                                           *ArcFormat==0) ||
-                                          strcasecmp(ArcFormat,Format))?
+                                          !strcasecmp(ArcFormat,Format))?
                                           MIF_SELECTED:0;
         #ifdef _NEW_ARC_SORT_
         if(SortMode)
@@ -316,7 +316,7 @@ int PluginClass::FormatToPlugin(char *Format, int &PluginNumber, int &PluginType
   return FALSE;
 }
 
-int WINAPI _export Configure(int ItemNumber);
+SHAREDSYMBOL int WINAPI _export Configure(int ItemNumber);
 
 int PluginClass::ProcessKey(int Key,unsigned int ControlState)
 {

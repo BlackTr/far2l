@@ -53,6 +53,16 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pathmix.hpp"
 #include "strmix.hpp"
 #include "mix.hpp"
+#include "execute.hpp"
+#ifdef __APPLE__
+//# include <sys/sysctl.h>
+# include <mach/mach_host.h>
+# include <mach/vm_statistics.h>
+#elif !defined(__FreeBSD__)
+# include <sys/sysinfo.h>
+#endif
+ 
+
 
 static int LastDizWrapMode = -1;
 static int LastDizWrapType = -1;
@@ -99,7 +109,7 @@ void InfoList::DisplayObject()
 	FARString strTitle;
 	FARString strOutStr;
 	Panel *AnotherPanel;
-	FARString strDriveRoot;
+//	FARString strDriveRoot;
 	FARString strVolumeName, strFileSystemName;
 	DWORD MaxNameLength,FileSystemFlags,VolumeNumber;
 	FARString strDiskNumber;
@@ -137,8 +147,8 @@ void InfoList::DisplayObject()
 		PrintText(MInfoCompName);
 		PrintInfo(strComputerName);
 
-		wchar_t *UserName = strUserName.GetBuffer(dwSize);
 		dwSize = 256;
+		wchar_t *UserName = strUserName.GetBuffer(dwSize);
 		WINPORT(GetUserName)(UserName, &dwSize);
 		strUserName.ReleaseBuffer();
 
@@ -173,15 +183,15 @@ void InfoList::DisplayObject()
 			GetPathRoot(strJuncName,strDriveRoot); //"\??\D:\Junc\Src\"
 		}
 	}
-	else*/
-		GetPathRoot(strCurDir, strDriveRoot);
-
-	if (apiGetVolumeInformation(strDriveRoot,&strVolumeName,
+	else
+		GetPathRoot(strCurDir, strDriveRoot);*/
+	fprintf(stderr, "apiGetVolumeInformation: %ls\n", strCurDir.CPtr());
+	if (apiGetVolumeInformation(strCurDir,&strVolumeName,
 	                            &VolumeNumber,&MaxNameLength,&FileSystemFlags,
 	                            &strFileSystemName))
 	{
 		int IdxMsgID=-1;
-		int DriveType=FAR_GetDriveType(strDriveRoot,nullptr,TRUE);
+		int DriveType=FAR_GetDriveType(strCurDir,nullptr,TRUE);
 
 		switch (DriveType)
 		{
@@ -224,7 +234,8 @@ void InfoList::DisplayObject()
 		}
 
 
-		strTitle=FARString(L" ")+DiskType+L" "+MSG(MInfoDisk)+L" "+(strDriveRoot)+L" ("+strFileSystemName+L") ";
+//		strTitle=FARString(L" ")+DiskType+L" "+MSG(MInfoDisk)+L" "+(strDriveRoot)+L" ("+strFileSystemName+L") ";
+		strTitle=FARString(L" ")+L" ("+strFileSystemName+L") ";
 
 /*		switch(DriveType)
 		{
@@ -246,7 +257,7 @@ void InfoList::DisplayObject()
 		strDiskNumber.Format(L"%04X-%04X",VolumeNumber>>16,VolumeNumber & 0xffff);
 	}
 	else // Error!
-		strTitle = strDriveRoot;
+		strTitle = strCurDir;//strDriveRoot;
 
 	TruncStr(strTitle,X2-X1-3);
 	GotoXY(X1+(X2-X1+1-(int)strTitle.GetLength())/2,CurY++);
@@ -271,11 +282,13 @@ void InfoList::DisplayObject()
 
 	/* #4 - disk info: label & SN */
 
-	GotoXY(X1+2,CurY++);
-	PrintText(MInfoDiskLabel);
-	PrintInfo(strVolumeName);
+	if (!strVolumeName.IsEmpty()) {
+		GotoXY(X1+2,CurY++);
+		PrintText(MInfoDiskLabel);
+		PrintInfo(strVolumeName);
+	}
 
-    GotoXY(X1+2,CurY++);
+	GotoXY(X1+2,CurY++);
 	PrintText(MInfoDiskNumber);
 	PrintInfo(strDiskNumber);
 
@@ -289,48 +302,93 @@ void InfoList::DisplayObject()
 	GotoXY(X1+(X2-X1+1-(int)strTitle.GetLength())/2,CurY++);
 	PrintText(strTitle);
 
-	/*MEMORYSTATUSEX ms={sizeof(ms)};
-	if (GlobalMemoryStatusEx(&ms))
+#ifdef __APPLE__
+        unsigned long long totalram;
+        vm_size_t page_size;
+        unsigned long long freeram;
+        int ret_sc;
+
+        //ret_sc =  (sysctlbyname("hw.memsize", &totalram, &ulllen, NULL, 0) ? 1 : 0);
+        ret_sc = ( KERN_SUCCESS !=_host_page_size(mach_host_self(), &page_size)  ? 1 : 0);
+
+        mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+        vm_statistics_data_t vmstat;
+
+        ret_sc += (KERN_SUCCESS != host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) ? 1 : 0);
+        totalram = (vmstat.wire_count + vmstat.active_count + vmstat.inactive_count + vmstat.free_count) * page_size;
+        freeram  = vmstat.free_count * page_size;
+
+        //double total = vmstat.wire_count + vmstat.active_count + vmstat.inactive_count + vmstat.free_count;
+        //double wired = vmstat.wire_count;
+        //double active = vmstat.active_count;
+        //double inactive = vmstat.inactive_count;
+        //double free = vmstat.free_count;
+
+	if (!ret_sc)
 	{
-		if (!ms.dwMemoryLoad)
-			ms.dwMemoryLoad=100-ToPercent64(ms.ullAvailPhys+ms.ullAvailPageFile,ms.ullTotalPhys+ms.ullTotalPageFile);
+		DWORD dwMemoryLoad = 100 - 
+			ToPercent64(freeram, totalram);
 
 		GotoXY(X1+2,CurY++);
 		PrintText(MInfoMemoryLoad);
-		strOutStr.Format(L"%d%%",ms.dwMemoryLoad);
+		strOutStr.Format(L"%d%%", dwMemoryLoad);
 		PrintInfo(strOutStr);
 
 		GotoXY(X1+2,CurY++);
 		PrintText(MInfoMemoryTotal);
-		InsertCommas(ms.ullTotalPhys,strOutStr);
+		InsertCommas(totalram,strOutStr);
 		PrintInfo(strOutStr);
 
 		GotoXY(X1+2,CurY++);
 		PrintText(MInfoMemoryFree);
-		InsertCommas(ms.ullAvailPhys,strOutStr);
+		InsertCommas(freeram,strOutStr);
+		PrintInfo(strOutStr);
+	}
+
+
+#elif !defined(__FreeBSD__)
+	struct sysinfo si = {};
+	if (sysinfo(&si) == 0)
+	{
+		DWORD dwMemoryLoad = 100 - 
+			ToPercent64(si.freeram + si.freeswap, si.totalram + si.totalswap);
+
+		GotoXY(X1+2,CurY++);
+		PrintText(MInfoMemoryLoad);
+		strOutStr.Format(L"%d%%", dwMemoryLoad);
 		PrintInfo(strOutStr);
 
 		GotoXY(X1+2,CurY++);
-		PrintText(MInfoVirtualTotal);
-		InsertCommas(ms.ullTotalVirtual,strOutStr);
+		PrintText(MInfoMemoryTotal);
+		InsertCommas(si.totalram,strOutStr);
 		PrintInfo(strOutStr);
 
 		GotoXY(X1+2,CurY++);
-		PrintText(MInfoVirtualFree);
-		InsertCommas(ms.ullAvailVirtual,strOutStr);
+		PrintText(MInfoMemoryFree);
+		InsertCommas(si.freeram,strOutStr);
+		PrintInfo(strOutStr);
+
+		GotoXY(X1+2,CurY++);
+		PrintText(MInfoSharedMemory);
+		InsertCommas(si.sharedram,strOutStr);
+		PrintInfo(strOutStr);
+
+		GotoXY(X1+2,CurY++);
+		PrintText(MInfoBufferMemory);
+		InsertCommas(si.bufferram,strOutStr);
 		PrintInfo(strOutStr);
 
 		GotoXY(X1+2,CurY++);
 		PrintText(MInfoPageFileTotal);
-		InsertCommas(ms.ullTotalPageFile,strOutStr);
+		InsertCommas(si.totalswap,strOutStr);
 		PrintInfo(strOutStr);
 
 		GotoXY(X1+2,CurY++);
 		PrintText(MInfoPageFileFree);
-		InsertCommas(ms.ullAvailPageFile,strOutStr);
+		InsertCommas(si.freeswap,strOutStr);
 		PrintInfo(strOutStr);
-	}*/
-
+	}
+#endif
 	/* #5 - description */
 
 	ShowDirDescription(CurY);
@@ -549,11 +607,38 @@ void InfoList::ShowDirDescription(int YPos)
 
 	if (AnotherPanel->GetMode()==FILE_PANEL)
 	{
-		FARString strDizDir;
-		AnotherPanel->GetCurDir(strDizDir);
+		FARString strDir;
+		AnotherPanel->GetCurDir(strDir);
 
-		if (!strDizDir.IsEmpty())
-			AddEndSlash(strDizDir);
+		do {
+			FARString strGit = strDir + L"/.git";
+			struct stat s;
+			if (stat(strGit.GetMB().c_str(), &s) == 0)
+			{
+				fprintf(stderr, "GIT: %ls\n", strGit.CPtr());
+				std::vector<std::wstring> lines;
+				std::string cmd = "git -C \"";
+				cmd+= EscapeQuotas(Wide2MB(strDir.CPtr()));
+				cmd+= "\" status";
+
+				if (POpen(lines, cmd.c_str()))
+				{
+					for (const auto &l : lines)
+					{
+						GotoXY(X1 + 2, ++YPos);
+						PrintText(l.c_str());
+					}
+					DrawSeparator(++YPos);
+				}
+				break;
+			}
+		} while (CutToSlash(strDir, true));
+
+
+		AnotherPanel->GetCurDir(strDir);
+
+		if (!strDir.IsEmpty())
+			AddEndSlash(strDir);
 
 		FARString strArgName;
 		const wchar_t *NamePtr = Opt.InfoPanel.strFolderInfoFiles;
@@ -561,12 +646,13 @@ void InfoList::ShowDirDescription(int YPos)
 		while ((NamePtr=GetCommaWord(NamePtr,strArgName)))
 		{
 			FARString strFullDizName;
-			strFullDizName = strDizDir;
+			strFullDizName = strDir;
 			strFullDizName += strArgName;
 			FAR_FIND_DATA_EX FindData;
 
-			if (!apiGetFindDataEx(strFullDizName, FindData))
+			if (!apiGetFindDataEx(strFullDizName, FindData, true, FIND_FILE_FLAG_CASE_INSENSITIVE)) {
 				continue;
+			}
 
 			CutToSlash(strFullDizName, false);
 			strFullDizName += FindData.strFileName;
@@ -659,7 +745,7 @@ int InfoList::OpenDizFile(const wchar_t *DizFile,int YPos)
 
 	if (!DizView)
 	{
-		DizView=new DizViewer;
+		DizView=new(std::nothrow) DizViewer;
 
 		if (!DizView)
 			return FALSE;
@@ -789,3 +875,4 @@ void InfoList::DynamicUpdateKeyBar()
 	KB->ReadRegGroup(L"Info",Opt.strLanguage);
 	KB->SetAllRegGroup();
 }
+

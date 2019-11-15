@@ -5,9 +5,7 @@
 
 namespace Sudo
 {
-	#define SDC_ENV_TITLE	"sdc_sudo_title"
-	#define SDC_ENV_CONFIRM	"sdc_sudo_confirm"
-	#define SDC_ENV_PROMPT	"sdc_sudo_prompt"
+	extern std::string g_sudo_title, g_sudo_prompt, g_sudo_confirm;
 
 	enum SudoCommand
 	{
@@ -19,6 +17,8 @@ namespace Sudo
 		SUDO_CMD_LSEEK,
 		SUDO_CMD_WRITE,
 		SUDO_CMD_READ,
+		SUDO_CMD_STATFS,
+		SUDO_CMD_STATVFS,
 		SUDO_CMD_STAT,
 		SUDO_CMD_LSTAT,
 		SUDO_CMD_FSTAT,
@@ -35,10 +35,17 @@ namespace Sudo
 		SUDO_CMD_CHMOD,
 		SUDO_CMD_CHOWN,
 		SUDO_CMD_UTIMES,
+		SUDO_CMD_FUTIMES,
 		SUDO_CMD_RENAME,
 		SUDO_CMD_SYMLINK,
 		SUDO_CMD_LINK,
-		SUDO_CMD_REALPATH
+		SUDO_CMD_REALPATH,
+		SUDO_CMD_READLINK,
+		SUDO_CMD_FLISTXATTR,
+		SUDO_CMD_FGETXATTR,
+		SUDO_CMD_FSETXATTR,
+		SUDO_CMD_FSFLAGSGET,
+		SUDO_CMD_FSFLAGSSET
 	};
 
 	class BaseTransaction
@@ -92,5 +99,9 @@ namespace Sudo
 		ClientReconstructCurDir(const char * &path);
 		~ClientReconstructCurDir();
 	};
+
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
+	int bugaware_ioctl_pint(int fd, unsigned long req, int *v);
+#endif
 
 }

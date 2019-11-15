@@ -112,6 +112,7 @@ int FTP::GetHostFiles(struct PluginPanelItem *PanelItem,int ItemsNumber,int Move
 
 			if(Move && !p->Folder)
 			{
+				RegWipeScope reg_wipe_scope;
 				FP_DeleteRegKey(p->RegKey);
 
 				if(n < ItemsNumber) PanelItem[n].Flags &= ~PPIF_SELECTED;
@@ -176,7 +177,7 @@ int FTP::GetHostFiles(struct PluginPanelItem *PanelItem,int ItemsNumber,int Move
 
 			if(dest_exists)
 			{
-				if(!unlink(DestName)<0) WriteFailed=TRUE;
+				if(unlink(DestName) == -1) WriteFailed=TRUE;
 //				if(!WINPORT(DeleteFile)(DestName))
 	//				if(!WINPORT(SetFileAttributes)(DestName,FILE_ATTRIBUTE_NORMAL) && !DeleteFile(DestName//))
 		//				WriteFailed=TRUE;
@@ -189,8 +190,10 @@ int FTP::GetHostFiles(struct PluginPanelItem *PanelItem,int ItemsNumber,int Move
 					WriteFailed=TRUE;
 					unlink(DestName);
 				}
-				else if(Move)
+				else if(Move) {
+					RegWipeScope reg_wipe_scope;
 					FP_DeleteRegKey(p->RegKey);
+				}
 			}
 
 			if(WriteFailed)
@@ -217,6 +220,7 @@ int FTP::GetHostFiles(struct PluginPanelItem *PanelItem,int ItemsNumber,int Move
 
 			if(p && p->Folder)
 			{
+				RegWipeScope reg_wipe_scope;
 				FP_DeleteRegKey(p->RegKey);
 
 				if(n < ItemsNumber)

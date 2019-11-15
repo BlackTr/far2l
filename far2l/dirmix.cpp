@@ -47,6 +47,10 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "pathmix.hpp"
 #include "strmix.hpp"
 #include "interf.hpp"
+#include "scantree.hpp"
+#include "delete.hpp"
+#include <atomic>
+
 
 BOOL FarChDir(const wchar_t *NewDir, BOOL ChangeDir)
 {
@@ -97,13 +101,11 @@ int TestFolder(const wchar_t *Path)
 	// первая проверка - че-нить считать можем?
 	FAR_FIND_DATA_EX fdata;
 	FindFile Find(strFindPath);
-
 	bool bFind = false;
 	if(Find.Get(fdata))
 	{
 		return TSTFLD_NOTEMPTY;
 	}
-
 	if (!bFind)
 	{
 		GuardLastError lstError;
@@ -122,7 +124,6 @@ int TestFolder(const wchar_t *Path)
 			{
 				if (lstError.Get() == ERROR_ACCESS_DENIED)
 					return TSTFLD_NOTACCESS;
-
 				return TSTFLD_EMPTY;
 			}
 		}
@@ -245,4 +246,83 @@ void CreatePath(FARString &strPath)
 	}
 
 	strPath.ReleaseBuffer();
+}
+
+std::string GetHelperPathName(const char *name)
+{
+ 	std::string out = g_strFarPath.GetMB();
+	out+= GOOD_SLASH;
+	out+= name;
+
+	struct stat s;
+	if (stat(out.c_str(), &s) == 0)
+		return out;
+
+	if (TranslateInstallPath_Share2Lib(out)) {
+		if (stat(out.c_str(), &s) == 0)
+			return out;
+	}
+
+	fprintf(stderr, "GetHelperPathName('%s') - not found\n", name);
+	return out;
+}
+
+std::string GetMyScriptQuoted(const char *name)
+{
+	std::string out = "\"";
+	out+= EscapeQuotas(GetHelperPathName(name));
+	out+= "\"";
+	return out;
+}
+
+
+void PrepareTemporaryOpenPath(FARString &Path)
+{
+	Path = InMyTemp("open");
+
+	std::vector<FARString> outdated;
+
+	ScanTree scan_tree(0, 0);
+	scan_tree.SetFindPath(Path.CPtr(), L"*", 0);
+	FAR_FIND_DATA_EX found_data;
+	FARString found_name;
+	time_t now = time(nullptr);
+	while (scan_tree.GetNextName(&found_data, found_name)) {
+		struct timespec ts_mod = {}, ts_change = {};
+		WINPORT(FileTimeToLocalFileTime)(&found_data.ftUnixModificationTime, &found_data.ftUnixModificationTime);
+		WINPORT(FileTimeToLocalFileTime)(&found_data.ftUnixStatusChangeTime, &found_data.ftUnixStatusChangeTime);
+		WINPORT(FileTime_Win32ToUnix)(&found_data.ftUnixModificationTime, &ts_mod);
+		WINPORT(FileTime_Win32ToUnix)(&found_data.ftUnixStatusChangeTime, &ts_change);
+		time_t delta = std::min(now - ts_mod.tv_sec, now - ts_change.tv_sec);
+		if (delta > 60) {//one minute ought be enouht to open anything (c)
+			outdated.push_back(found_name);
+			fprintf(stderr, "PrepareTemporaryOpenPath: delta=%u for '%ls'\n", 
+				(unsigned int)delta, found_name.CPtr());
+		}
+	};
+
+	for (const auto &p : outdated) {
+		DeleteDirTree(p.CPtr());
+	}
+	apiCreateDirectory(Path, nullptr);
+	
+	static std::atomic<unsigned short>	s_counter;
+	char tmp[64]; sprintf(tmp, "%c%u_%u", GOOD_SLASH, (unsigned int)getpid(), (unsigned int)++s_counter);
+	
+	Path+= tmp;
+	apiCreateDirectory(Path, nullptr);
+}
+
+
+FARString DefaultPanelInitialDirectory()
+{
+	FARString out;
+	const char *home = getenv("HOME");
+	if (home && *home) {
+		out = home;
+	} else
+		out = g_strFarPath;
+	
+	DeleteEndSlash(out);
+	return out;
 }

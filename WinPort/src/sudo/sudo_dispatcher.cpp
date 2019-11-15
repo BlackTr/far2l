@@ -6,10 +6,25 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/stat.h>
+#if defined(__APPLE__) || defined(__FreeBSD__)
+  #include <sys/mount.h>
+#else
+  #include <sys/statfs.h>
+  #include <sys/ioctl.h>
+#  if !defined(__CYGWIN__)
+#   include <linux/fs.h>
+#  endif
+#endif
+#include <sys/statvfs.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#ifndef __FreeBSD__
+# include <sys/xattr.h>
+#endif
 #include <set>
 #include <vector>
 #include <mutex>
+#include <locale.h>
 #include "sudo_private.h"
 #include <locale.h>
 
@@ -147,11 +162,12 @@ namespace Sudo
 	}
 	
 	
-	static void OnSudoDispatch_StatCommon(int (*pfn)(const char *path, struct stat *buf), BaseTransaction &bt)
+	template <class STAT_STRUCT>
+		static void OnSudoDispatch_StatCommon(int (*pfn)(const char *path, STAT_STRUCT *buf), BaseTransaction &bt)
 	{		
 		std::string path;
 		bt.RecvStr(path);
-		struct stat s;
+		STAT_STRUCT s = {};
 		int r = pfn(path.c_str(), &s);
 		bt.SendPOD(r);
 		if (r==0)
@@ -222,6 +238,7 @@ namespace Sudo
 	{
 		DIR *d;
 		bt.RecvPOD(d);
+		bt.RecvErrno();
 		struct dirent *de = g_dirs.Check(d) ? readdir(d) : nullptr;
 		if (de) {
 			bt.SendInt(0);
@@ -317,6 +334,20 @@ namespace Sudo
 			bt.SendErrno();
 	}
 	
+	static void OnSudoDispatch_FUTimes(BaseTransaction &bt)
+	{
+		int fd = -1;
+		struct timeval times[2];
+		bt.RecvPOD(fd);
+		bt.RecvPOD(times[0]);
+		bt.RecvPOD(times[1]);
+
+		off_t r = g_fds.Check(fd) ? futimes(fd, times) : -1;
+		bt.SendInt(r);
+		if (r==-1)
+			bt.SendErrno();
+	}
+
 	static void OnSudoDispatch_TwoPathes(int (*pfn)(const char *, const char *), BaseTransaction &bt)
 	{
 		std::string path1, path2;
@@ -332,7 +363,7 @@ namespace Sudo
 	
 	static void OnSudoDispatch_RealPath(BaseTransaction &bt)
 	{
-		std::string path;		
+		std::string path;
 		bt.RecvStr(path);
 		char resolved_path[PATH_MAX + 1] = { 0 };
 		if (realpath(path.c_str(), resolved_path)) {
@@ -342,6 +373,142 @@ namespace Sudo
 			int err = errno;
 			bt.SendInt( err ? err : -1 );
 		}
+	}
+	
+	static void OnSudoDispatch_ReadLink(BaseTransaction &bt)
+	{
+		std::string path;
+		size_t bufsiz;
+		bt.RecvStr(path);
+		bt.RecvPOD(bufsiz);
+		std::vector<char> buf(bufsiz + 1);
+		ssize_t r = readlink(path.c_str(), &buf[0], bufsiz);
+		bt.SendPOD(r);
+		if (r >= 0 && r<= (ssize_t)bufsiz) {
+			bt.SendBuf(&buf[0], r);
+		} else
+			bt.SendErrno();
+	}
+	
+	static void OnSudoDispatch_FListXAttr(BaseTransaction &bt)
+	{
+#ifdef __FreeBSD__
+		return;
+#else
+		int fd;
+		size_t size;
+		bt.RecvPOD(fd);
+		bt.RecvPOD(size);
+		std::vector<char> buf(size + 1);
+		
+#ifdef __APPLE__
+		ssize_t r = g_fds.Check(fd) ? flistxattr(fd, &buf[0], size, 0) : -1;
+#else
+		ssize_t r = g_fds.Check(fd) ? flistxattr(fd, &buf[0], size) : -1;
+#endif
+		bt.SendPOD(r);
+		if (r > 0 ) {
+			bt.SendBuf(&buf[0], r);
+		} else if (r < 0)
+			bt.SendErrno();
+#endif
+	}
+
+	static void OnSudoDispatch_FGetXAttr(BaseTransaction &bt)
+	{
+#ifdef __FreeBSD__
+		return;
+#else
+		int fd;
+		std::string name;
+		size_t size;
+		bt.RecvPOD(fd);
+		bt.RecvStr(name);
+		bt.RecvPOD(size);
+		std::vector<char> buf(size + 1);
+#ifdef __APPLE__
+		ssize_t r = g_fds.Check(fd) ? fgetxattr(fd, name.c_str(), &buf[0], size, 0, 0) : -1;
+#else
+		ssize_t r = g_fds.Check(fd) ? fgetxattr(fd, name.c_str(), &buf[0], size) : -1;
+#endif
+		bt.SendPOD(r);
+		if (r > 0 ) {
+			bt.SendBuf(&buf[0], r);
+		} else if (r < 0)
+			bt.SendErrno();
+#endif
+	}
+			
+	static void OnSudoDispatch_FSetXAttr(BaseTransaction &bt)
+	{
+#ifdef __FreeBSD__
+		return;
+#else
+		int fd;
+		std::string name;
+		size_t size;
+		int flags;
+		bt.RecvPOD(fd);
+		bt.RecvStr(name);
+		bt.RecvPOD(size);
+		std::vector<char> buf(size + 1);
+		bt.RecvBuf(&buf[0], size);
+		bt.RecvPOD(flags);
+		
+#ifdef __APPLE__
+		int r = g_fds.Check(fd) ? fsetxattr(fd, name.c_str(), &buf[0], size, 0, flags) : -1;
+#else
+		int r = g_fds.Check(fd) ? fsetxattr(fd, name.c_str(), &buf[0], size, flags) : -1;
+#endif
+
+		bt.SendPOD(r);
+		if (r == -1 )
+			bt.SendErrno();
+#endif
+	}
+	
+	static void OnSudoDispatch_FSFlagsGet(BaseTransaction &bt)
+	{
+#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__CYGWIN__)
+		std::string path;
+		bt.RecvStr(path);
+		int r = -1;
+		int fd = open(path.c_str(), O_RDONLY);
+		if (fd != -1) {
+			int flags = 0;
+			r = bugaware_ioctl_pint(fd, FS_IOC_GETFLAGS, &flags);
+			close(fd);
+			if (r == 0) {
+				bt.SendInt(0);
+				bt.SendInt(flags);
+				return;
+			}
+		}
+		bt.SendInt(-1);
+		bt.SendErrno();
+#endif
+	}
+	
+	static void OnSudoDispatch_FSFlagsSet(BaseTransaction &bt)
+	{
+#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__CYGWIN__)
+		std::string path;
+		bt.RecvStr(path);
+		int flags = bt.RecvInt();
+		
+		int r = -1;
+		int fd = open(path.c_str(), O_RDONLY);
+		if (fd != -1) {
+			r = bugaware_ioctl_pint(fd, FS_IOC_SETFLAGS, &flags);
+			close(fd);
+			if (r == 0) {
+				bt.SendInt(0);
+				return;
+			}
+		}
+		bt.SendInt(-1);
+		bt.SendErrno();
+#endif
 	}
 	
 	void OnSudoDispatch(SudoCommand cmd, BaseTransaction &bt)
@@ -375,12 +542,20 @@ namespace Sudo
 				OnSudoDispatch_Read(bt);
 				break;
 				
+			case SUDO_CMD_STATFS:
+				OnSudoDispatch_StatCommon<struct statfs>(&statfs, bt);
+				break;
+				
+			case SUDO_CMD_STATVFS:
+				OnSudoDispatch_StatCommon<struct statvfs>(&statvfs, bt);
+				break;
+				
 			case SUDO_CMD_STAT:
-				OnSudoDispatch_StatCommon(&stat, bt);
+				OnSudoDispatch_StatCommon<struct stat>(&stat, bt);
 				break;
 				
 			case SUDO_CMD_LSTAT:
-				OnSudoDispatch_StatCommon(&lstat, bt);
+				OnSudoDispatch_StatCommon<struct stat>(&lstat, bt);
 				break;
 				
 			case SUDO_CMD_FSTAT:
@@ -439,6 +614,10 @@ namespace Sudo
 				OnSudoDispatch_UTimes(bt);
 				break;
 			
+			case SUDO_CMD_FUTIMES:
+				OnSudoDispatch_FUTimes(bt);
+				break;
+
 			case SUDO_CMD_RENAME:
 				OnSudoDispatch_TwoPathes(&rename, bt);
 				break;
@@ -454,7 +633,31 @@ namespace Sudo
 			case SUDO_CMD_REALPATH:
 				OnSudoDispatch_RealPath(bt);
 				break;
+
+			case SUDO_CMD_READLINK:
+				OnSudoDispatch_ReadLink(bt);
+				break;
+				
+			case SUDO_CMD_FLISTXATTR:
+				OnSudoDispatch_FListXAttr(bt);
+				break;
 			
+			case SUDO_CMD_FGETXATTR:
+				OnSudoDispatch_FGetXAttr(bt);
+				break;
+			
+			case SUDO_CMD_FSETXATTR:
+				OnSudoDispatch_FSetXAttr(bt);
+				break;
+			
+			case SUDO_CMD_FSFLAGSGET:
+				OnSudoDispatch_FSFlagsGet(bt);
+				break;
+				
+			case SUDO_CMD_FSFLAGSSET:
+				OnSudoDispatch_FSFlagsSet(bt);
+				break;
+				
 			default:
 				throw "OnSudoDispatch - bad command";
 		}
@@ -491,6 +694,7 @@ namespace Sudo
 			perror("open /dev/null");
 
 		setlocale(LC_ALL, "");//otherwise non-latin keys missing with XIM input method
+		
 		sudo_dispatcher_with_pipes(pipe_request, pipe_reply);
 		close(pipe_request);
 		close(pipe_reply);

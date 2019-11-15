@@ -39,6 +39,8 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "scantree.hpp"
 #include "config.hpp"
 #include "pathmix.hpp"
+#include "dirmix.hpp"
+#include "InterThreadCall.hpp"
 
 int ToPercent(uint32_t N1,uint32_t N2)
 {
@@ -175,4 +177,25 @@ FARString& FarMkTempEx(FARString &strDest, const wchar_t *Prefix, BOOL WithTempP
 
 	strDest.ReleaseBuffer();
 	return strDest;
+}
+
+void DisplayNotification(const wchar_t *action, const char *object)
+{
+	if (!Opt.NotifOpt.OnlyIfBackground || !WINPORT(IsConsoleActive)()) {
+		WINPORT(ConsoleDisplayNotification)(action, MB2Wide(object).c_str());
+	}
+}
+
+void DisplayNotification(const char *action, const char *object)
+{
+	if (!Opt.NotifOpt.OnlyIfBackground || !WINPORT(IsConsoleActive)()) {
+		DisplayNotification(MB2Wide(action).c_str(), object);
+	}
+}
+
+void DisplayNotification(const wchar_t *action, const wchar_t *object)
+{
+	if (!Opt.NotifOpt.OnlyIfBackground || !WINPORT(IsConsoleActive)()) {
+		DisplayNotification(action, Wide2MB(object).c_str());
+	}
 }

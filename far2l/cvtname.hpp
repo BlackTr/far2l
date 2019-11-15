@@ -35,8 +35,11 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 FARString& PrepareDiskPath(FARString &strPath, bool CheckFullPath=true);
 
+bool MixToFullPath(LPCWSTR stPath, FARString& strDest, LPCWSTR stCurrentDir);
 void ConvertNameToReal(const wchar_t *Src, FARString &strDest);
 void ConvertNameToFull(const wchar_t *Src, FARString &strDest);
+void ConvertNameToFull(FARString &strSrcDest);
 
 void GetPathRoot(const wchar_t *Path, FARString &strRoot);
 
+void ConvertHomePrefixInPath(FARString &strFileName);

@@ -58,9 +58,13 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "mix.hpp"
 #include "dirinfo.hpp"
 #include "wakeful.hpp"
+#include "execute.hpp"
+
+#if defined(__APPLE__) || defined(__FreeBSD__)
+  #include <errno.h>
+#endif
 
 static void ShellDeleteMsg(const wchar_t *Name,int Wipe,int Percent);
-static int AskDeleteReadOnly(const wchar_t *Name,DWORD Attr,int Wipe);
 static int ShellRemoveFile(const wchar_t *Name,int Wipe);
 static int ERemoveDirectory(const wchar_t *Name,int Wipe);
 static int RemoveToRecycleBin(const wchar_t *Name);
@@ -74,6 +78,26 @@ ULONG ProcessedItems;
 ConsoleTitle *DeleteTitle=nullptr;
 
 enum {DELETE_SUCCESS,DELETE_YES,DELETE_SKIP,DELETE_CANCEL};
+
+struct AskDeleteReadOnly
+{
+	AskDeleteReadOnly(const wchar_t *Name,int Wipe);
+	
+	~AskDeleteReadOnly()
+	{
+		if (_ump)
+			_ump->Unmake();
+	}
+	
+	inline operator int() const
+	{
+		return _r;
+	}
+
+	private:
+	IUnmakeWritablePtr _ump;
+	int _r;
+};
 
 void ShellDelete(Panel *SrcPanel,int Wipe)
 {
@@ -153,7 +177,7 @@ void ShellDelete(Panel *SrcPanel,int Wipe)
 
 	Ret=1;
 	
-	if (Ret && (Opt.Confirm.Delete || SelCount>1 || (FileAttr & FILE_ATTRIBUTE_DIRECTORY)))
+	if (Ret && (Opt.Confirm.Delete || SelCount>1))// || (FileAttr & FILE_ATTRIBUTE_DIRECTORY)))
 	{
 		const wchar_t *DelMsg;
 		const wchar_t *TitleMsg=MSG(Wipe?MDeleteWipeTitle:MDeleteTitle);
@@ -390,7 +414,7 @@ void ShellDelete(Panel *SrcPanel,int Wipe)
 							if (FindData.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
 							{
 								if (FindData.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
-									apiSetFileAttributes(strFullName,FILE_ATTRIBUTE_NORMAL);
+									apiMakeWritable(strFullName); //apiSetFileAttributes(strFullName,FILE_ATTRIBUTE_NORMAL);
 
 								int MsgCode=ERemoveDirectory(strFullName,Wipe);
 
@@ -439,7 +463,7 @@ void ShellDelete(Panel *SrcPanel,int Wipe)
 							if (ScTree.IsDirSearchDone())
 							{
 								if (FindData.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
-									apiSetFileAttributes(strFullName,FILE_ATTRIBUTE_NORMAL);
+									apiMakeWritable(strFullName); //apiSetFileAttributes(strFullName,FILE_ATTRIBUTE_NORMAL);
 
 								int MsgCode=ERemoveDirectory(strFullName,Wipe);
 
@@ -459,7 +483,7 @@ void ShellDelete(Panel *SrcPanel,int Wipe)
 						}
 						else
 						{
-							int AskCode=AskDeleteReadOnly(strFullName,FindData.dwFileAttributes,Wipe);
+							AskDeleteReadOnly AskCode(strFullName,Wipe);
 
 							if (AskCode==DELETE_CANCEL)
 							{
@@ -480,7 +504,7 @@ void ShellDelete(Panel *SrcPanel,int Wipe)
 				if (!Cancel)
 				{
 					if (FileAttr & FILE_ATTRIBUTE_READONLY)
-						apiSetFileAttributes(strSelName,FILE_ATTRIBUTE_NORMAL);
+						apiMakeWritable(strSelName); //apiSetFileAttributes(strSelName,FILE_ATTRIBUTE_NORMAL);
 
 					int DeleteCode;
 
@@ -519,7 +543,7 @@ void ShellDelete(Panel *SrcPanel,int Wipe)
 			}
 			else
 			{
-				int AskCode=AskDeleteReadOnly(strSelName,FileAttr,Wipe);
+				AskDeleteReadOnly AskCode(strSelName,Wipe);
 
 				if (AskCode==DELETE_CANCEL)
 					break;
@@ -597,12 +621,16 @@ void ShellDeleteMsg(const wchar_t *Name,int Wipe,int Percent)
 	PreRedraw.SetParam(preRedrawItem.Param);
 }
 
-int AskDeleteReadOnly(const wchar_t *Name,DWORD Attr,int Wipe)
+AskDeleteReadOnly::AskDeleteReadOnly(const wchar_t *Name,int Wipe) 
+	: _r(DELETE_YES)
 {
 	int MsgCode;
+	FARString strFullName;
+	ConvertNameToFull(Name, strFullName);
+	_ump = apiMakeWritable(strFullName);
 
-	if (!(Attr & FILE_ATTRIBUTE_READONLY))
-		return(DELETE_YES);
+	if (!_ump)//(Attr & FILE_ATTRIBUTE_READONLY))
+		return;//(DELETE_YES);
 
 	if (!Opt.Confirm.RO)
 		ReadOnlyDeleteMode=1;
@@ -623,18 +651,21 @@ int AskDeleteReadOnly(const wchar_t *Name,DWORD Attr,int Wipe)
 			ReadOnlyDeleteMode=1;
 			break;
 		case 2:
-			return(DELETE_SKIP);
+			_r = DELETE_SKIP;
+			return;
 		case 3:
 			ReadOnlyDeleteMode=3;
-			return(DELETE_SKIP);
+			_r = DELETE_SKIP;
+			return;
 		case -1:
 		case -2:
 		case 4:
-			return(DELETE_CANCEL);
+			_r = DELETE_CANCEL;
+			return;
 	}
 
-	apiSetFileAttributes(Name,FILE_ATTRIBUTE_NORMAL);
-	return(DELETE_YES);
+	//apiSetFileAttributes(Name,FILE_ATTRIBUTE_NORMAL);
+	//return(DELETE_YES);
 }
 
 
@@ -742,7 +773,7 @@ int ERemoveDirectory(const wchar_t *Name,int Wipe)
 			struct stat s = {};
 			if (sdc_lstat(Wide2MB(Name).c_str(), &s)==0 && (s.st_mode & S_IFMT)==S_IFLNK )
 			{
-				if (apiDeleteFile(Name))
+				if (sdc_unlink(Wide2MB(Name).c_str()) == 0) //if (apiDeleteFile(Name))
 					break;
 			}
 			if (apiRemoveDirectory(Name))
@@ -814,13 +845,29 @@ DWORD SHErrorToWinError(DWORD SHError)
 
 int RemoveToRecycleBin(const wchar_t *Name)
 {
-	return -1;
+	const std::string &name_mb = Wide2MB(Name);
+	std::string script = GetMyScriptQuoted("trash.sh");
+	script+= " \"";
+	script+= name_mb;
+	script+= '\"';
+
+	unsigned int flags = EF_HIDEOUT;
+	if (sudo_client_is_required_for(name_mb.c_str(), true))
+		flags|= EF_SUDO;
+
+	int r = farExecuteA(script.c_str(), flags);
+	if (r==0)
+		return TRUE;
+
+	errno = r;
+	WINPORT(TranslateErrno)();
+	return FALSE;
 }
 
 int WipeFile(const wchar_t *Name)
 {
 	uint64_t FileSize;
-	apiSetFileAttributes(Name,FILE_ATTRIBUTE_NORMAL);
+	apiMakeWritable(Name); //apiSetFileAttributes(Name,FILE_ATTRIBUTE_NORMAL);
 	File WipeFile;
 	if(!WipeFile.Open(Name, GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT|FILE_FLAG_WRITE_THROUGH|FILE_FLAG_SEQUENTIAL_SCAN))
 	{
@@ -888,17 +935,22 @@ int WipeDirectory(const wchar_t *Name)
 int DeleteFileWithFolder(const wchar_t *FileName)
 {
 	SudoClientRegion scr;
-	FARString strFileOrFolderName;
+	FARString strFileOrFolderName, strParentFolder;
 	strFileOrFolderName = FileName;
 	Unquote(strFileOrFolderName);
-	BOOL Ret=apiSetFileAttributes(strFileOrFolderName,FILE_ATTRIBUTE_NORMAL);
 
-	if (Ret)
+	strParentFolder = strFileOrFolderName;
+	CutToSlash(strParentFolder, true);
+	if (!strParentFolder.IsEmpty())
+		apiMakeWritable(strParentFolder);
+	apiMakeWritable(strFileOrFolderName);
+	/*BOOL Ret=apiSetFileAttributes(strFileOrFolderName,FILE_ATTRIBUTE_NORMAL);
+
+	if (Ret)*/
 	{
 		if (apiDeleteFile(strFileOrFolderName)) //BUGBUG
 		{
-			CutToSlash(strFileOrFolderName,true);
-			return apiRemoveDirectory(strFileOrFolderName);
+			return apiRemoveDirectory(strParentFolder);
 		}
 	}
 
@@ -920,7 +972,9 @@ void DeleteDirTree(const wchar_t *Dir)
 
 	while (ScTree.GetNextName(&FindData, strFullName))
 	{
-		apiSetFileAttributes(strFullName,FILE_ATTRIBUTE_NORMAL);
+		if (FindData.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
+			apiMakeWritable(strFullName);
+//		apiSetFileAttributes(strFullName,FILE_ATTRIBUTE_NORMAL);
 
 		if (FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
 		{
@@ -930,7 +984,7 @@ void DeleteDirTree(const wchar_t *Dir)
 		else
 			apiDeleteFile(strFullName);
 	}
-
-	apiSetFileAttributes(Dir,FILE_ATTRIBUTE_NORMAL);
+	apiMakeWritable(Dir);
+//	apiSetFileAttributes(Dir,FILE_ATTRIBUTE_NORMAL);
 	apiRemoveDirectory(Dir);
 }
